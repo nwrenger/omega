@@ -1,5 +1,6 @@
 pub mod error;
 pub mod events;
+pub mod clipboard;
 
 use std::env;
 use std::fs;

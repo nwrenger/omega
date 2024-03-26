@@ -26,9 +26,15 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<Box<dyn std::error::Error>> for Error {
-    fn from(_: Box<dyn std::error::Error>) -> Self {
-        error!("A general error occurred.");
+// impl From<Box<dyn std::error::Error>> for Error {
+//     fn from(value: Box<dyn std::error::Error>) -> Self {
+//         error!("clipboard::Error: {value:?}");
+//         Self::Clipboard
+//     }
+// }
+impl From<clippers::Error> for Error {
+    fn from(value: clippers::Error) -> Self {
+        error!("clippers::Error: {value:?}");
         Self::Clipboard
     }
 }

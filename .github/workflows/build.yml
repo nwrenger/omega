@@ -18,12 +18,17 @@ jobs:
         include:
           - os: ubuntu-latest
             exe: omega
+            run: |
+              sudo apt-get update
+              sudo apt-get install -y xorg-dev
           - os: windows-latest
             exe: omega.exe
           - os: macos-latest
             exe: omega
 
     steps:
+      - name: Dependencies
+        run: ${{ matrix.run }
       - uses: actions/checkout@v4
       - name: Build
         run: cargo build -r

@@ -12,7 +12,7 @@ keywords = ["editor", "file", "shortcuts", "tool"]
 categories = ["command-line-utilities", "text-editors"]
 
 [dependencies]
-clipboard = "0.5.0"
+clippers = "0.1.2"
 cursive = { version = "0.20.0", default-features = false, features = [
-    "pancurses-backend",
+    "crossterm-backend",
 ] }
