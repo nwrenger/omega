@@ -150,11 +150,7 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                 .unwrap_or_default();
 
             if file_path.is_file() {
-                if !file_path.exists() {
-                    fs::write(file_path.clone(), content)?;
-                } else {
-                    return Err(Error::AlreadyExists);
-                }
+                fs::write(file_path.clone(), content)?;
             } else {
                 return Err(Error::FileOpen);
             }
@@ -246,7 +242,7 @@ pub fn open(s: &mut Cursive) -> Result<()> {
 /// The name for the EditView is `name` + `_edit`, for the SelectView `name` + `_select`
 fn path_input(path: &String, name: String, files: bool) -> Result<LinearLayout> {
     let mut select = SelectView::<String>::new();
-    select.add_all_str(get_paths(path, files)?);
+    select.add_all_str(get_paths(path, files).unwrap_or_default());
 
     let view_name = name.clone() + "_edit";
     let select_name = name.clone() + "_select";
