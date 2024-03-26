@@ -14,5 +14,5 @@ categories = ["command-line-utilities", "text-editors"]
 [dependencies]
 clippers = "0.1.2"
 cursive = { version = "0.20.0", default-features = false, features = [
-    "crossterm-backend",
+    "pancurses-backend",
 ] }
