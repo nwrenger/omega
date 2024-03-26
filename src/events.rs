@@ -1,5 +1,6 @@
 use std::{env, fs, path::PathBuf};
 
+use clipboard::{ClipboardContext, ClipboardProvider};
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
     views::{
@@ -232,8 +233,7 @@ pub fn open(s: &mut Cursive) -> Result<()> {
 
 /// Copies the line where the cursor currently is
 pub fn copy(text_area: &mut TextArea) -> Result<()> {
-    let mut clipboard = clippers::Clipboard::get();
-
+    let mut ctx: ClipboardContext = ClipboardProvider::new()?;
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -241,14 +241,14 @@ pub fn copy(text_area: &mut TextArea) -> Result<()> {
 
     let lines: Vec<&str> = content.split('\n').collect();
 
-    clipboard.write_text(lines[current_line].to_string() + "\n")?;
+    ctx.set_contents(lines[current_line].to_string() + "\n")?;
 
     Ok(())
 }
 
 /// Pasts the current clipboard
 pub fn paste(text_area: &mut TextArea) -> Result<()> {
-    let mut clipboard = clippers::Clipboard::get();
+    let mut ctx: ClipboardContext = ClipboardProvider::new()?;
 
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
@@ -256,7 +256,7 @@ pub fn paste(text_area: &mut TextArea) -> Result<()> {
     let (current_line, cursor_in_line) = get_cursor_line_info(&content, cursor_pos);
 
     let mut lines: Vec<&str> = content.split('\n').collect();
-    if let Some(clippers::ClipperData::Text(text)) = clipboard.read() {
+    if let Ok(text) = ctx.get_contents() {
         let split = lines[current_line].split_at(cursor_in_line);
         let inserted_line = split.0.to_string() + text.as_str() + split.1;
         lines[current_line] = inserted_line.as_str();
@@ -272,7 +272,7 @@ pub fn paste(text_area: &mut TextArea) -> Result<()> {
 
 /// Cuts the line where the cursor currently is
 pub fn cut(text_area: &mut TextArea) -> Result<()> {
-    let mut clipboard = clippers::Clipboard::get();
+    let mut ctx: ClipboardContext = ClipboardProvider::new()?;
 
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
@@ -280,9 +280,7 @@ pub fn cut(text_area: &mut TextArea) -> Result<()> {
     let (current_line, _) = get_cursor_line_info(&content, cursor_pos);
 
     let mut lines: Vec<&str> = content.split('\n').collect();
-    clipboard
-        .write_text(lines[current_line].to_string() + "\n")
-        .unwrap();
+    ctx.set_contents(lines[current_line].to_string() + "\n")?;
     lines.remove(current_line);
 
     let new_content: String = lines.join("\n");

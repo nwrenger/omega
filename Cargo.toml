@@ -1,6 +1,6 @@
 [package]
 name = "omega"
-version = "0.1.1"
+version = "0.1.2"
 repository = "https://github.com/nwrenger/omega"
 documentation = "https://github.com/nwrenger/omega"
 readme = "README.md"
@@ -12,5 +12,7 @@ keywords = ["editor", "file", "shortcuts", "tool"]
 categories = ["command-line-utilities", "text-editors"]
 
 [dependencies]
-clippers = "0.1.2"
-cursive = "0.20.0"
+clipboard = "0.5.0"
+cursive = { version = "0.20.0", default-features = false, features = [
+    "pancurses-backend",
+] }
