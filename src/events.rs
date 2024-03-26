@@ -264,7 +264,7 @@ fn path_input(path: &String, name: String, files: bool) -> Result<LinearLayout> 
         )
         .child(ScrollView::new(
             select
-                .on_select(move |s, new_path: &String| {
+                .on_submit(move |s, new_path: &String| {
                     s.call_on_all_named(&view_name, |s: &mut EditView| {
                         s.set_content(new_path);
                     });
