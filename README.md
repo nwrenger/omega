@@ -1,6 +1,6 @@
 # omega
 
-A performant and extensive file editor with a wide variety of modern shortcuts.
+A performant and extensive terminal-based file editor with a wide variety of modern shortcuts.
 
 <img src="images/screenshot.png" width="650"/>
 
