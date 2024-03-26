@@ -136,9 +136,10 @@ fn main() {
     // custom theme
     let mut theme = Theme::default();
 
+    theme.shadow = false;
+
     theme.palette[PaletteColor::Background] = Color::Dark(BaseColor::Black);
     theme.palette[PaletteColor::View] = Color::Dark(BaseColor::Black);
-    theme.palette[PaletteColor::Shadow] = Color::Dark(BaseColor::Black);
     theme.palette[PaletteColor::Primary] = Color::Dark(BaseColor::White);
     theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::Blue);
     theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::White);

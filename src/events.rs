@@ -3,8 +3,8 @@ use std::{env, fs, path::PathBuf};
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
     views::{
-        Dialog, EditView, ListView, NamedView, OnEventView, Panel, ResizedView, ScrollView,
-        TextArea, TextView,
+        Dialog, EditView, LinearLayout, ListView, NamedView, OnEventView, Panel, ResizedView,
+        ScrollView, SelectView, TextArea, TextView,
     },
     Cursive,
 };
@@ -87,15 +87,11 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                 Dialog::new()
                     .title("Save As")
                     .padding_lrtb(1, 1, 1, 0)
-                    .content(
-                        EditView::new()
-                            .content(path_str.clone())
-                            .with_name("filepath"),
-                    )
+                    .content(path_input(&path_str, "filepath".to_string(), false)?)
                     .button("Save", {
                         move |s: &mut Cursive| {
                             let new_path = s
-                                .call_on_name("filepath", |view: &mut EditView| {
+                                .call_on_name("filepath_edit", |view: &mut EditView| {
                                     PathBuf::from(view.get_content().to_string())
                                 })
                                 .unwrap_or_default();
@@ -106,12 +102,21 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                                 })
                                 .unwrap_or_default();
 
-                            match fs::write(new_path.clone(), content) {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    Into::<Error>::into(e).to_dialog(s);
+                            if new_path.is_file() {
+                                if !new_path.exists() {
+                                    match fs::write(new_path.clone(), content) {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            Into::<Error>::into(e).to_dialog(s);
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    Error::AlreadyExists.to_dialog(s);
                                     return;
                                 }
+                            } else {
+                                Error::FileOpen.to_dialog(s);
                             }
 
                             s.call_on_name(
@@ -132,32 +137,32 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                         }
                     })
                     .dismiss_button("Cancel")
-                    .fixed_width(path_str.len() * 2)
+                    .full_width()
                     .with_name("save"),
             );
             Ok(false)
         } else {
+            let file_path = state.file_path.unwrap_or_default();
             let content = s
                 .call_on_name("editor", |view: &mut TextArea| {
                     view.get_content().to_string()
                 })
                 .unwrap_or_default();
 
-            fs::write(
-                state.file_path.as_ref().unwrap_or(&PathBuf::default()),
-                content,
-            )?;
+            if file_path.is_file() {
+                if !file_path.exists() {
+                    fs::write(file_path.clone(), content)?;
+                } else {
+                    return Err(Error::AlreadyExists);
+                }
+            } else {
+                return Err(Error::FileOpen);
+            }
 
             s.call_on_name(
                 "title_text",
                 |view: &mut Panel<OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>>| {
-                    view.set_title(
-                        state
-                            .file_path
-                            .as_ref()
-                            .unwrap_or(&PathBuf::default())
-                            .to_string_lossy(),
-                    )
+                    view.set_title(file_path.to_string_lossy())
                 },
             )
             .unwrap_or_default();
@@ -173,28 +178,29 @@ pub fn open(s: &mut Cursive) -> Result<()> {
         s.screen_mut().remove_layer(pos);
         Ok(())
     } else {
-        let path_str = env::current_dir()?.to_string_lossy().to_string();
+        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
+
+        let path_str = if let Some(path) = state.file_path {
+            path.to_string_lossy().to_string()
+        } else {
+            env::current_dir()?.to_string_lossy().to_string()
+        };
+
         s.add_layer(
             Dialog::new()
                 .title("Open")
                 .padding_lrtb(1, 1, 1, 0)
                 .content(
-                    ListView::new()
-                        .child(
-                            "Make sure that",
-                            TextView::new("you've saved your progress via Ctrl + s"),
-                        )
-                        .delimiter()
-                        .child(
-                            "Path",
-                            EditView::new()
-                                .content(path_str.clone())
-                                .with_name("open_new_path"),
-                        ),
+                    LinearLayout::vertical()
+                        .child(TextView::new(
+                            "Make sure that you've saved your progress via Ctrl + s",
+                        ))
+                        .child(TextView::new(" "))
+                        .child(path_input(&path_str, "open_new_path".to_string(), true)?),
                 )
                 .button("Open", move |s| {
                     let new_path = s
-                        .call_on_name("open_new_path", |view: &mut EditView| {
+                        .call_on_name("open_new_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
                         })
                         .unwrap_or_default();
@@ -220,13 +226,87 @@ pub fn open(s: &mut Cursive) -> Result<()> {
                     )
                     .unwrap_or_default();
 
+                    s.set_user_data(State {
+                        file_path: Some(new_path),
+                    });
+
                     s.pop_layer();
                 })
                 .dismiss_button("Cancel")
-                .fixed_width(path_str.len() * 2)
+                .full_width()
                 .with_name("open"),
         );
+
         Ok(())
+    }
+}
+
+/// Creates a filepath input view
+///
+/// The name for the EditView is `name` + `_edit`, for the SelectView `name` + `_select`
+fn path_input(path: &String, name: String, files: bool) -> Result<LinearLayout> {
+    let mut select = SelectView::<String>::new();
+    select.add_all_str(get_paths(path, files)?);
+
+    let view_name = name.clone() + "_edit";
+    let select_name = name.clone() + "_select";
+    let select_name2 = name.clone() + "_select";
+
+    Ok(LinearLayout::vertical()
+        .child(
+            EditView::new()
+                .content(path)
+                .on_edit(move |s, new_path, _| {
+                    s.call_on_all_named(&select_name, |view: &mut SelectView| {
+                        view.clear();
+                        view.add_all_str(
+                            get_paths(&new_path.to_string(), files).unwrap_or_default(),
+                        );
+                    });
+                })
+                .with_name(name.to_string() + "_edit"),
+        )
+        .child(ScrollView::new(
+            select
+                .on_select(move |s, new_path: &String| {
+                    s.call_on_all_named(&view_name, |s: &mut EditView| {
+                        s.set_content(new_path);
+                    });
+                    s.call_on_all_named(&select_name2, |view: &mut SelectView| {
+                        view.clear();
+                        view.add_all_str(
+                            get_paths(&new_path.to_string(), files).unwrap_or_default(),
+                        );
+                    });
+                })
+                .with_name(name.to_string() + "_select"),
+        )))
+}
+
+/// Getting all paths by a path
+fn get_paths(path: &String, files: bool) -> Result<Vec<String>> {
+    if let Ok(entries) = fs::read_dir(path) {
+        entries
+            .filter_map(|entry_result| {
+                let entry = match entry_result {
+                    Ok(entry) => entry,
+                    Err(e) => return Some(Err(e.into())),
+                };
+
+                match entry.file_type() {
+                    Ok(file_type) => {
+                        if files || file_type.is_dir() {
+                            Some(Ok(entry.path().to_string_lossy().to_string()))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => Some(Err(e.into())),
+                }
+            })
+            .collect()
+    } else {
+        Err(Error::FileOpen)
     }
 }
 
