@@ -134,9 +134,10 @@ fn main() {
     siv.add_fullscreen_layer(panel);
 
     // custom theme
-    let mut theme = Theme::default();
-
-    theme.shadow = false;
+    let mut theme = Theme {
+        shadow: false,
+        ..Default::default()
+    };
 
     theme.palette[PaletteColor::Background] = Color::Dark(BaseColor::Black);
     theme.palette[PaletteColor::View] = Color::Dark(BaseColor::Black);
