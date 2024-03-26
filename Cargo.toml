@@ -2,11 +2,13 @@
 name = "zeta"
 version = "0.1.0"
 repository = "https://github.com/nwrenger/zeta"
+documentation = "https://github.com/nwrenger/zeta"
+readme = "README.md"
 authors = ["nils@wrenger.net"]
 description = "A performant file editor with extensive shortcuts"
 license = "MIT"
 edition = "2021"
-keywords = ["editor", "file", "shortcuts"]
+keywords = ["editor", "file", "shortcuts", "tool"]
 categories = ["command-line-utilities", "text-editors"]
 
 [dependencies]
