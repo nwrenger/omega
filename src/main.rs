@@ -17,6 +17,7 @@ use cursive::theme::Color;
 use cursive::theme::PaletteColor;
 use cursive::theme::Theme;
 use cursive::traits::*;
+use cursive::view::ScrollStrategy;
 use cursive::views::Panel;
 use cursive::views::{OnEventView, TextArea};
 
@@ -84,6 +85,7 @@ fn main() {
         .content(content.clone().unwrap_or_default())
         .with_name("editor")
         .scrollable()
+        .scroll_strategy(ScrollStrategy::StickToBottom)
         .full_screen();
 
     let events = OnEventView::new(text_area)
