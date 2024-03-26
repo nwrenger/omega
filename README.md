@@ -1,3 +1,6 @@
+[![crates.io](https://img.shields.io/crates/v/omega.svg)](https://crates.io/crates/omega)
+[![crates.io](https://img.shields.io/crates/d/omega.svg)](https://crates.io/crates/omega)
+
 # omega
 
 A performant and extensive terminal-based file editor with a wide variety of modern shortcuts.
@@ -15,9 +18,8 @@ That will open a file and the editor itself.
 
 When specifying a not existing/invalid path the editor displays that in the top right via a `*` after the path (if no path is specified only the `*` will be visible).
 
-> Moving the cursor via mouse input is also possible.
-
 ## Bindings
+
 | Global          | Keybinding   |
 | --------------- | ------------ |
 | Infos           | `Ctrl` + `z` |
@@ -35,6 +37,8 @@ When specifying a not existing/invalid path the editor displays that in the top 
 | Move Cursor to EoL | `Shift` + <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> |
 | Ident              | `Tab`                                         |
 | Remove Ident       | `Shift` + `Tab`                               |
+
+> Moving the cursor via mouse input is also possible.
 
 ## Installation
 
