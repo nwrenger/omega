@@ -46,3 +46,4 @@ You can currently install `omega` using cargo:
 ```bash
 cargo install omega
 ```
+Or download the binary directly from the [releases page](https://github.com/nwrenger/omega/releases/latest).
