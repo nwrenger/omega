@@ -18,8 +18,6 @@ jobs:
         include:
           - os: ubuntu-latest
             exe: omega
-          - os: windows-latest
-            exe: omega.exe
           - os: macos-latest
             exe: omega
 
