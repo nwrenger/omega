@@ -27,6 +27,7 @@ When specifying a not existing/invalid path the editor displays that in the top 
 | Quitting        | `Ctrl` + `q` |
 | Force Quitting  | `Ctrl` + `f` |
 | Saving File     | `Ctrl` + `s` |
+| Opening a File  | `Ctrl` + `o` |
 
 | Editor             | Keybinding                                    |
 | ------------------ | --------------------------------------------- |

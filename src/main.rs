@@ -18,7 +18,7 @@ use cursive::traits::*;
 use cursive::views::Panel;
 use cursive::views::{OnEventView, TextArea};
 
-use error::{Result, ResultExt};
+use error::ResultExt;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -30,7 +30,6 @@ const PKG_LICENSE: &str = env!("CARGO_PKG_LICENSE");
 #[derive(Clone, Debug)]
 struct State {
     file_path: Option<PathBuf>,
-    saved: Result<bool>,
 }
 
 fn main() {
@@ -53,7 +52,6 @@ fn main() {
 
     siv.set_user_data(State {
         file_path: file_path.clone(),
-        saved: Ok(false),
     });
 
     // disable/handle globally
@@ -64,12 +62,14 @@ fn main() {
     siv.clear_global_callbacks(Event::CtrlChar('q'));
     siv.clear_global_callbacks(Event::CtrlChar('f'));
     siv.clear_global_callbacks(Event::CtrlChar('s'));
+    siv.clear_global_callbacks(Event::CtrlChar('o'));
 
     siv.add_global_callback(Event::CtrlChar('z'), |s| events::info(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('d'), |s| s.toggle_debug_console());
     siv.add_global_callback(Event::CtrlChar('q'), |s| events::quit(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('f'), |s| s.quit());
     siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s).handle(s));
+    siv.add_global_callback(Event::CtrlChar('o'), |s| events::open(s).handle(s));
 
     let text_area = TextArea::new()
         .content(content.clone().unwrap_or_default())

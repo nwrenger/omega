@@ -9,10 +9,9 @@ use cursive::{
     Cursive,
 };
 
-use crate::State;
-use crate::PKG_NAME;
 use crate::{
-    error::Result, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_REPOSITORY, PKG_VERSION,
+    error::{Error, Result},
+    State, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME, PKG_REPOSITORY, PKG_VERSION,
 };
 
 /// Shows all commands
@@ -47,6 +46,7 @@ pub fn info(s: &mut Cursive) -> Result<()> {
                         .child("Quitting", TextView::new("Ctrl + q"))
                         .child("Force Quitting", TextView::new("Ctrl + f"))
                         .child("Saving File", TextView::new("Ctrl + s"))
+                        .child("Opening a File", TextView::new("Ctrl + o"))
                         .delimiter()
                         // editor
                         .child("Copying Line", TextView::new("Ctrl + c"))
@@ -81,64 +81,61 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
         Ok(false)
     } else {
         let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-        s.set_user_data(State {
-            saved: Ok(false),
-            ..state
-        });
-        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
         if state.file_path.is_none() {
             let path_str = env::current_dir()?.to_string_lossy().to_string();
-
             s.add_layer(
                 Dialog::new()
                     .title("Save As")
                     .padding_lrtb(1, 1, 1, 0)
-                    .content(EditView::new().content(path_str).with_name("filepath"))
-                    .button("Save", move |s| {
-                        let new_path = s
-                            .call_on_name("filepath", |view: &mut EditView| {
-                                PathBuf::from(view.get_content().to_string())
-                            })
-                            .unwrap_or_default();
+                    .content(
+                        EditView::new()
+                            .content(path_str.clone())
+                            .with_name("filepath"),
+                    )
+                    .button("Save", {
+                        move |s: &mut Cursive| {
+                            let new_path = s
+                                .call_on_name("filepath", |view: &mut EditView| {
+                                    PathBuf::from(view.get_content().to_string())
+                                })
+                                .unwrap_or_default();
 
-                        let content = s
-                            .call_on_name("editor", |view: &mut TextArea| {
-                                view.get_content().to_string()
-                            })
-                            .unwrap_or_default();
+                            let content = s
+                                .call_on_name("editor", |view: &mut TextArea| {
+                                    view.get_content().to_string()
+                                })
+                                .unwrap_or_default();
 
-                        match fs::write(new_path.clone(), content) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                s.set_user_data(State {
-                                    file_path: Some(new_path.clone()),
-                                    saved: Err(e.into()),
-                                });
-                                return;
+                            match fs::write(new_path.clone(), content) {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    Into::<Error>::into(e).to_dialog(s);
+                                    return;
+                                }
                             }
+
+                            s.call_on_name(
+                                "title_text",
+                                |view: &mut Panel<
+                                    OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
+                                >| {
+                                    view.set_title(new_path.to_string_lossy())
+                                },
+                            )
+                            .unwrap_or_default();
+
+                            s.set_user_data(State {
+                                file_path: Some(new_path.clone()),
+                            });
+
+                            s.pop_layer();
                         }
-
-                        s.call_on_name(
-                            "title_text",
-                            |view: &mut Panel<
-                                OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
-                            >| {
-                                view.set_title(new_path.to_string_lossy())
-                            },
-                        )
-                        .unwrap_or_default();
-
-                        s.set_user_data(State {
-                            file_path: Some(new_path.clone()),
-                            saved: Ok(true),
-                        });
-
-                        s.pop_layer();
                     })
                     .dismiss_button("Cancel")
-                    .full_width()
+                    .fixed_width(path_str.len() * 2)
                     .with_name("save"),
             );
+            Ok(false)
         } else {
             let content = s
                 .call_on_name("editor", |view: &mut TextArea| {
@@ -165,15 +162,71 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
             )
             .unwrap_or_default();
 
-            s.set_user_data(State {
-                saved: Ok(true),
-                ..state
-            });
+            Ok(true)
         }
+    }
+}
 
-        s.with_user_data(|state: &mut State| state.clone())
-            .unwrap()
-            .saved
+/// Opens a new file safely with saving the current file
+pub fn open(s: &mut Cursive) -> Result<()> {
+    if let Some(pos) = s.screen_mut().find_layer_from_name("open") {
+        s.screen_mut().remove_layer(pos);
+        Ok(())
+    } else {
+        let path_str = env::current_dir()?.to_string_lossy().to_string();
+        s.add_layer(
+            Dialog::new()
+                .title("Open")
+                .padding_lrtb(1, 1, 1, 0)
+                .content(
+                    ListView::new()
+                        .child(
+                            "Make sure that",
+                            TextView::new("you've saved your progress via Ctrl + s"),
+                        )
+                        .delimiter()
+                        .child(
+                            "Path",
+                            EditView::new()
+                                .content(path_str.clone())
+                                .with_name("open_new_path"),
+                        ),
+                )
+                .button("Open", move |s| {
+                    let new_path = s
+                        .call_on_name("open_new_path", |view: &mut EditView| {
+                            PathBuf::from(view.get_content().to_string())
+                        })
+                        .unwrap_or_default();
+
+                    match fs::read_to_string(new_path.clone()) {
+                        Ok(content) => {
+                            s.call_on_name("editor", |text_area: &mut TextArea| {
+                                text_area.set_content(content);
+                            })
+                            .unwrap_or_default();
+                        }
+                        Err(e) => {
+                            Into::<Error>::into(e).to_dialog(s);
+                            return;
+                        }
+                    };
+
+                    s.call_on_name(
+                        "title_text",
+                        |view: &mut Panel<
+                            OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
+                        >| { view.set_title(new_path.to_string_lossy()) },
+                    )
+                    .unwrap_or_default();
+
+                    s.pop_layer();
+                })
+                .dismiss_button("Cancel")
+                .fixed_width(path_str.len() * 2)
+                .with_name("open"),
+        );
+        Ok(())
     }
 }
 

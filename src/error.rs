@@ -49,7 +49,7 @@ impl From<std::io::Error> for Error {
 
 impl Error {
     /// Converts this error into a UI element for a Cursive application.
-    fn to_dialog(self, siv: &mut Cursive) {
+    pub fn to_dialog(self, siv: &mut Cursive) {
         if let Some(pos) = siv.screen_mut().find_layer_from_name("error") {
             siv.screen_mut().remove_layer(pos);
         }
