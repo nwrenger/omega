@@ -321,7 +321,7 @@ pub fn copy(text_area: &mut TextArea) -> Result<()> {
 }
 
 /// Pasts the current clipboard
-pub fn paste(text_area: &mut TextArea) -> Result<()> {
+pub fn paste(s: &mut Cursive, text_area: &mut TextArea) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -332,6 +332,13 @@ pub fn paste(text_area: &mut TextArea) -> Result<()> {
     let split = lines[current_line].split_at(cursor_in_line);
     let inserted_line = split.0.to_string() + text.as_str() + split.1;
     lines[current_line] = inserted_line.as_str();
+
+    s.call_on_all_named(
+        "editor_scroll",
+        |view: &mut ScrollView<NamedView<TextArea>>| {
+            view.scroll_to_bottom();
+        },
+    );
 
     let new_content: String = lines.join("\n");
     text_area.set_content(new_content);

@@ -86,6 +86,7 @@ fn main() {
         .with_name("editor")
         .scrollable()
         .scroll_strategy(ScrollStrategy::StickToBottom)
+        .with_name("editor_scroll")
         .full_screen();
 
     let events = OnEventView::new(text_area)
@@ -96,7 +97,7 @@ fn main() {
         })
         .on_pre_event(Event::CtrlChar('v'), move |s| {
             if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
-                events::paste(&mut text_area).handle(s);
+                events::paste(s, &mut text_area).handle(s);
             }
         })
         .on_pre_event(Event::CtrlChar('x'), move |s| {
