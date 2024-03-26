@@ -48,3 +48,4 @@ You can currently install `omega` using cargo:
 cargo install omega
 ```
 Or download the binary directly from the [releases page](https://github.com/nwrenger/omega/releases/latest).
+On linux based systems you'll need the `libx11-dev`/`libX11-devel` packages to be installed.
