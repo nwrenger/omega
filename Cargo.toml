@@ -1,6 +1,6 @@
 [package]
 name = "omega"
-version = "0.1.7"
+version = "0.1.8"
 repository = "https://github.com/nwrenger/omega"
 documentation = "https://github.com/nwrenger/omega"
 readme = "README.md"
@@ -11,8 +11,15 @@ edition = "2021"
 keywords = ["editor", "file", "shortcuts", "tool"]
 categories = ["command-line-utilities", "text-editors"]
 
+[profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+strip = true
+
 [dependencies]
 clippers = "0.1.2"
 cursive = { version = "0.20.0", default-features = false, features = [
     "crossterm-backend",
 ] }
+cursive_buffered_backend = "0.6.1"

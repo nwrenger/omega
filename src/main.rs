@@ -6,6 +6,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use cursive::backends;
 use cursive::event::Event;
 use cursive::event::Key;
 
@@ -19,6 +20,7 @@ use cursive::traits::*;
 use cursive::views::Panel;
 use cursive::views::{OnEventView, TextArea};
 
+use cursive_buffered_backend::BufferedBackend;
 use error::ResultExt;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -31,6 +33,12 @@ const PKG_LICENSE: &str = env!("CARGO_PKG_LICENSE");
 #[derive(Clone, Debug)]
 struct State {
     file_path: Option<PathBuf>,
+}
+
+fn backend() -> Box<BufferedBackend> {
+    let crossterm_backend = backends::crossterm::Backend::init().unwrap();
+    let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
+    Box::new(buffered_backend)
 }
 
 fn main() {
@@ -155,5 +163,5 @@ fn main() {
     siv.set_theme(theme);
 
     // start event loop
-    siv.run();
+    siv.run_with(|| backend());
 }
