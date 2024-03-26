@@ -1,7 +1,7 @@
 [![crates.io](https://img.shields.io/crates/v/omega.svg)](https://crates.io/crates/omega)
 [![crates.io](https://img.shields.io/crates/d/omega.svg)](https://crates.io/crates/omega)
 
-# omega
+# `omega`
 
 A performant and extensive terminal-based file editor with a wide variety of modern shortcuts.
 
@@ -42,7 +42,7 @@ When specifying a not existing/invalid path the editor displays that in the top 
 
 ## Installation
 
-You can currently install the editor using cargo:
+You can currently install `omega` using cargo:
 ```bash
 cargo install omega
 ```
