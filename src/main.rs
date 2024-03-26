@@ -1,252 +1,156 @@
-use std::cell::RefCell;
+pub mod error;
+pub mod events;
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use cursive::event::Event;
 use cursive::event::Key;
+
+use cursive::logger;
+use cursive::theme::BaseColor;
+use cursive::theme::BorderStyle;
+use cursive::theme::Color;
+use cursive::theme::PaletteColor;
 use cursive::theme::Theme;
 use cursive::traits::*;
-use cursive::views::NamedView;
 use cursive::views::Panel;
-use cursive::views::ResizedView;
-use cursive::views::ScrollView;
-use cursive::views::{Dialog, EditView, OnEventView, TextArea};
+use cursive::views::{OnEventView, TextArea};
+
+use error::{Result, ResultExt};
+
+const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+const PKG_REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
+const PKG_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+const PKG_DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
+const PKG_LICENSE: &str = env!("CARGO_PKG_LICENSE");
+
+#[derive(Clone, Debug)]
+struct State {
+    file_path: Option<PathBuf>,
+    saved: Result<bool>,
+}
 
 fn main() {
+    logger::init();
     let mut siv = cursive::default();
-
     let args: Vec<String> = env::args().collect();
 
     let file_path = if args.len() > 1 {
-        Rc::new(RefCell::new(Some(PathBuf::from(&args[1]))))
-    } else {
-        Rc::new(RefCell::new(None))
-    };
-
-    let file_content = if file_path.borrow().is_some()
-        && file_path
-            .borrow()
-            .as_ref()
-            .unwrap_or(&PathBuf::default())
-            .exists()
-    {
-        Some(fs::read_to_string(file_path.borrow().clone().unwrap_or_default()).unwrap_or_default())
+        Some(PathBuf::from(&args[1]))
     } else {
         None
     };
 
-    let text_view = Panel::new(
-        OnEventView::new(
-            TextArea::new()
-                .content(file_content.clone().unwrap_or_default())
-                .with_name("editor")
-                .scrollable()
-                .full_screen(),
-        )
-        // todo: make this somehow work
-        // .on_pre_event(EventTrigger::any(), {
-        //     let file_path = Rc::clone(&file_path);
-        //     move |s| {
-        //         s.call_on_name(
-        //             "title_text",
-        //             |view: &mut Panel<
-        //                 OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
-        //             >| {
-        //                 view.set_title(
-        //                     file_path
-        //                         .borrow()
-        //                         .as_ref()
-        //                         .unwrap_or(&PathBuf::default())
-        //                         .to_string_lossy()
-        //                         + " *",
-        //                 )
-        //             },
-        //         )
-        //         .unwrap_or_default();
-        //     }
-        // })
-        .on_pre_event(Event::CtrlChar('s'), {
-            let file_path = Rc::clone(&file_path);
-            move |s| {
-                if file_path.borrow().is_none() {
-                    let path_str = env::current_dir()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap_or_default()
-                        .to_string();
+    let content =
+        if file_path.is_some() && file_path.as_ref().unwrap_or(&PathBuf::default()).exists() {
+            Some(fs::read_to_string(file_path.clone().unwrap_or_default()).unwrap_or_default())
+        } else {
+            None
+        };
 
-                    s.add_layer(
-                        Dialog::new()
-                            .title("Save As")
-                            .padding_lrtb(1, 1, 1, 0)
-                            .content(EditView::new().content(path_str).with_name("filepath"))
-                            .button("Save", {
-                                let file_path = Rc::clone(&file_path);
-                                move |s| {
-                                    let new_path = s
-                                        .call_on_name("filepath", |view: &mut EditView| {
-                                            PathBuf::from(view.get_content().to_string())
-                                        })
-                                        .unwrap_or_default();
-                                    *file_path.borrow_mut() = Some(new_path.clone());
+    siv.set_user_data(State {
+        file_path: file_path.clone(),
+        saved: Ok(false),
+    });
 
-                                    let content = s
-                                        .call_on_name("editor", |view: &mut TextArea| {
-                                            view.get_content().to_string()
-                                        })
-                                        .unwrap_or_default();
+    // disable/handle globally
+    siv.clear_global_callbacks(Event::CtrlChar('c'));
 
-                                    fs::write(&new_path, content).unwrap_or_default();
+    siv.clear_global_callbacks(Event::CtrlChar('z'));
+    siv.clear_global_callbacks(Event::CtrlChar('d'));
+    siv.clear_global_callbacks(Event::CtrlChar('q'));
+    siv.clear_global_callbacks(Event::CtrlChar('f'));
+    siv.clear_global_callbacks(Event::CtrlChar('s'));
 
-                                    s.call_on_name(
-                                        "title_text",
-                                        |view: &mut Panel<
-                                            OnEventView<
-                                                ResizedView<ScrollView<NamedView<TextArea>>>,
-                                            >,
-                                        >| {
-                                            view.set_title(
-                                                file_path
-                                                    .borrow()
-                                                    .as_ref()
-                                                    .unwrap_or(&PathBuf::default())
-                                                    .to_string_lossy(),
-                                            )
-                                        },
-                                    )
-                                    .unwrap_or_default();
+    siv.add_global_callback(Event::CtrlChar('z'), |s| events::info(s).handle(s));
+    siv.add_global_callback(Event::CtrlChar('d'), |s| s.toggle_debug_console());
+    siv.add_global_callback(Event::CtrlChar('q'), |s| events::quit(s).handle(s));
+    siv.add_global_callback(Event::CtrlChar('f'), |s| s.quit());
+    siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s).handle(s));
 
-                                    s.pop_layer();
-                                }
-                            })
-                            .button("Cancel", |s| {
-                                s.call_on_name(
-                                    "title_text",
-                                    |view: &mut Panel<
-                                        OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
-                                    >| { view.set_title(" *") },
-                                )
-                                .unwrap_or_default();
-                                s.pop_layer();
-                            })
-                            .full_width(),
-                    );
-                } else {
-                    let content = s
-                        .call_on_name("editor", |view: &mut TextArea| {
-                            view.get_content().to_string()
-                        })
-                        .unwrap_or_default();
+    let text_area = TextArea::new()
+        .content(content.clone().unwrap_or_default())
+        .with_name("editor")
+        .scrollable()
+        .full_screen();
 
-                    fs::write(
-                        file_path.borrow().as_ref().unwrap_or(&PathBuf::default()),
-                        content,
-                    )
-                    .unwrap_or_default();
-
-                    s.call_on_name(
-                        "title_text",
-                        |view: &mut Panel<
-                            OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
-                        >| {
-                            view.set_title(
-                                file_path
-                                    .borrow()
-                                    .as_ref()
-                                    .unwrap_or(&PathBuf::default())
-                                    .to_string_lossy(),
-                            )
-                        },
-                    )
-                    .unwrap_or_default();
-                }
+    let events = OnEventView::new(text_area)
+        .on_pre_event(Event::CtrlChar('c'), move |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::copy(&mut text_area).handle(s);
             }
         })
-        .on_pre_event(Event::Alt(Key::Up), |s| {
+        .on_pre_event(Event::CtrlChar('v'), move |s| {
             if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
-                move_line(&mut text_area, Direction::Up);
+                events::paste(&mut text_area).handle(s);
             }
         })
-        .on_pre_event(Event::Alt(Key::Down), |s| {
+        .on_pre_event(Event::CtrlChar('x'), move |s| {
             if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
-                move_line(&mut text_area, Direction::Down);
+                events::cut(&mut text_area).handle(s);
             }
-        }),
-    )
-    .title(
-        file_path
-            .borrow()
-            .clone()
-            .unwrap_or_default()
-            .to_string_lossy()
-            + if file_content.is_none() { " *" } else { "" },
-    )
-    .with_name("title_text");
+        })
+        .on_pre_event(Event::Shift(Key::Up), |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::move_line(&mut text_area, events::Direction::Up).handle(s);
+            }
+        })
+        .on_pre_event(Event::Shift(Key::Down), |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::move_line(&mut text_area, events::Direction::Down).handle(s);
+            }
+        })
+        .on_pre_event(Event::Shift(Key::Left), |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::move_cursor_end(&mut text_area, events::Direction::Left).handle(s);
+            }
+        })
+        .on_pre_event(Event::Shift(Key::Right), |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::move_cursor_end(&mut text_area, events::Direction::Right).handle(s);
+            }
+        })
+        .on_pre_event(Key::Tab, |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::tabulator(&mut text_area, true).handle(s);
+            }
+        })
+        .on_pre_event(Event::Shift(Key::Tab), |s| {
+            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+                events::tabulator(&mut text_area, false).handle(s);
+            }
+        });
 
-    siv.add_fullscreen_layer(text_view);
-    // theme
-    siv.set_theme(Theme::terminal_default());
+    let binding = file_path.clone().unwrap_or_default();
+    let file_str = binding.to_string_lossy();
+    let label = file_str + if content.is_none() { " *" } else { "" };
 
+    let panel = Panel::new(events).title(label).with_name("title_text");
+
+    siv.add_fullscreen_layer(panel);
+
+    // custom theme
+    let mut theme = Theme::default();
+
+    theme.palette[PaletteColor::Background] = Color::Dark(BaseColor::Black);
+    theme.palette[PaletteColor::View] = Color::Dark(BaseColor::Black);
+    theme.palette[PaletteColor::Shadow] = Color::Dark(BaseColor::Black);
+    theme.palette[PaletteColor::Primary] = Color::Dark(BaseColor::White);
+    theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::Blue);
+    theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::White);
+    theme.palette[PaletteColor::Tertiary] = Color::Dark(BaseColor::Black);
+    theme.palette[PaletteColor::TitlePrimary] = Color::Light(BaseColor::Red);
+    theme.palette[PaletteColor::TitleSecondary] = Color::Dark(BaseColor::Yellow);
+    theme.palette[PaletteColor::Highlight] = Color::Light(BaseColor::Red);
+    theme.palette[PaletteColor::HighlightInactive] = Color::Dark(BaseColor::Yellow);
+
+    theme.borders = BorderStyle::Simple;
+
+    siv.set_theme(theme);
+
+    // start event loop
     siv.run();
-}
-
-#[derive(PartialEq)]
-enum Direction {
-    Up,
-    Down,
-}
-
-fn move_line(text_area: &mut TextArea, direction: Direction) {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let mut lines: Vec<&str> = content.split('\n').collect();
-    let mut current_line = 0;
-    let mut cursor_in_line = 0;
-
-    let mut count = 0;
-    for (i, line) in lines.iter().enumerate() {
-        let line_len = line.len() + 1;
-        if count + line_len > cursor_pos {
-            current_line = i;
-            cursor_in_line = cursor_pos - count;
-            break;
-        }
-        count += line_len;
-    }
-
-    if (current_line == 0 && direction == Direction::Up)
-        || (current_line == lines.len() - 1 && direction == Direction::Down)
-    {
-        return;
-    }
-
-    let line_to_move = lines.remove(current_line);
-    match direction {
-        Direction::Up => lines.insert(current_line - 1, line_to_move),
-        Direction::Down => lines.insert(current_line + 1, line_to_move),
-    }
-
-    let new_content: String = lines.join("\n");
-    text_area.set_content(new_content);
-
-    let new_cursor_pos = if direction == Direction::Up && current_line > 0 {
-        lines
-            .iter()
-            .take(current_line - 1)
-            .map(|line| line.len() + 1)
-            .sum::<usize>()
-            + cursor_in_line
-    } else {
-        lines
-            .iter()
-            .take(current_line + (if direction == Direction::Down { 1 } else { 0 }))
-            .map(|line| line.len() + 1)
-            .sum::<usize>()
-            + cursor_in_line
-    };
-
-    text_area.set_cursor(new_cursor_pos);
 }

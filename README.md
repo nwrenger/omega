@@ -1,3 +1,38 @@
 # zeta
 
-Yeah another one...But this one works in a terminal which is also called a TUI (Terminal User Interface). It's still very unfinished and unstable so be aware of that when testing it. Therefore, I would love Feedback via Issues!
+A performant and extensive file editor with a wide variety of modern shortcuts.
+
+<img src="images/screenshot.png" width="650"/>
+
+## How to use
+
+```bash
+zeta [path]
+```
+That will open a file and the editor itself.
+
+`path` can only be a file, not a directory.
+
+When specifying a not existing/invalid path the editor displays that in the top right via a `*` after the path (if no path is specified only the `*` will be visible).
+
+> Moving the cursor via mouse input is also possible.
+
+## Bindings
+| Global          | Keybinding   |
+| --------------- | ------------ |
+| Infos           | `Ctrl` + `z` |
+| Toggle debugger | `Ctrl` + `d` |
+| Quitting        | `Ctrl` + `q` |
+| Force Quitting  | `Ctrl` + `f` |
+| Saving File     | `Ctrl` + `s` |
+
+| Editor             | Keybinding                                    |
+| ------------------ | --------------------------------------------- |
+| Copying Line       | `Ctrl` + `c`                                  |
+| Paste Clipboard    | `Ctrl` + `v`                                  |
+| Cut Line           | `Ctrl` + `x`                                  |
+| Move Line          | `Shift` + <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> |
+| Move Cursor to EoL | `Shift` + <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> |
+| Ident              | `Tab`                                         |
+| Remove Ident       | `Shift` + `Tab`                               |
+
