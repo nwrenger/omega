@@ -1,4 +1,4 @@
-# zeta
+# omega
 
 A performant and extensive file editor with a wide variety of modern shortcuts.
 
@@ -7,7 +7,7 @@ A performant and extensive file editor with a wide variety of modern shortcuts.
 ## How to use
 
 ```bash
-zeta [path]
+omega [path]
 ```
 That will open a file and the editor itself.
 
@@ -36,3 +36,9 @@ When specifying a not existing/invalid path the editor displays that in the top 
 | Ident              | `Tab`                                         |
 | Remove Ident       | `Shift` + `Tab`                               |
 
+## Installation
+
+You can currently install the editor using cargo:
+```bash
+cargo install omega
+```
