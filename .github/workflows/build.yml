@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Dependencies
-        run: ${{ matrix.run }
+        run: ${{ matrix.run }}
       - uses: actions/checkout@v4
       - name: Build
         run: cargo build -r
