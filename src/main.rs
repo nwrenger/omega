@@ -10,7 +10,9 @@ use cursive::backends;
 use cursive::event::Event;
 use cursive::event::Key;
 
-use cursive::logger;
+use cursive::logger::reserve_logs;
+use cursive::logger::CursiveLogger;
+use cursive::reexports::log;
 use cursive::theme::BaseColor;
 use cursive::theme::BorderStyle;
 use cursive::theme::Color;
@@ -47,8 +49,15 @@ fn backend() -> Box<BufferedBackend> {
 /// Helper type of the main panel
 type MainPanel = Panel<OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>>;
 
+fn logging() {
+    reserve_logs(1_000);
+    log::set_logger(&CursiveLogger).unwrap();
+    log::set_max_level(log::LevelFilter::Error);
+}
+
 fn main() {
-    logger::init();
+    logging();
+
     let mut siv = cursive::default();
     let args: Vec<String> = env::args().collect();
 

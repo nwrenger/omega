@@ -6,7 +6,7 @@ use cursive::{reexports::log::error, view::Nameable, views::Dialog, Cursive};
 #[repr(i64)]
 #[derive(Debug, Clone, Copy)]
 pub enum Error {
-    /// This File already exists
+    /// This File already exists, this can be seen more than a warning than a real error
     AlreadyExists,
     /// The user provided arguments are malformed
     Arguments,
@@ -29,17 +29,17 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<clippers::Error> for Error {
-    fn from(value: clippers::Error) -> Self {
-        error!("clippers::Error: {value:?}");
-        Self::Clipboard
-    }
-}
-
 impl From<std::convert::Infallible> for Error {
     fn from(e: std::convert::Infallible) -> Self {
         error!("convert::Infallible: {e:?}");
         Self::Arguments
+    }
+}
+
+impl From<clippers::Error> for Error {
+    fn from(value: clippers::Error) -> Self {
+        error!("clippers::Error: {value:?}");
+        Self::Clipboard
     }
 }
 
@@ -57,15 +57,32 @@ impl Error {
             siv.screen_mut().remove_layer(pos);
         }
         let error_message = self.to_string();
-        siv.add_layer(
-            Dialog::text(error_message)
-                .title("Error")
-                .padding_lrtb(1, 1, 1, 0)
-                .button("OK", |s| {
-                    s.pop_layer();
-                })
-                .with_name("error"),
-        );
+        match self {
+            // more a warn
+            Error::AlreadyExists => {
+                siv.add_layer(
+                    Dialog::text(error_message)
+                        .title("Warning")
+                        .padding_lrtb(1, 1, 1, 0)
+                        .button("Ok", |s| {
+                            s.pop_layer();
+                        })
+                        .with_name("error"),
+                );
+            }
+            // real errors
+            Error::Arguments | Error::FileOpen | Error::Clipboard => {
+                siv.add_layer(
+                    Dialog::text(error_message)
+                        .title("Error")
+                        .padding_lrtb(1, 1, 1, 0)
+                        .button("Ok", |s| {
+                            s.pop_layer();
+                        })
+                        .with_name("error"),
+                );
+            }
+        }
     }
 }
 

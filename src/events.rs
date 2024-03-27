@@ -100,16 +100,8 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                                 })
                                 .unwrap();
 
-                            if !new_path.exists() {
-                                match fs::write(new_path.clone(), content) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        Into::<Error>::into(e).to_dialog(s);
-                                        return;
-                                    }
-                                }
-                            } else {
-                                Error::AlreadyExists.to_dialog(s);
+                            if let Err(e) = fs::write(new_path.clone(), content) {
+                                Into::<Error>::into(e).to_dialog(s);
                                 return;
                             }
 
@@ -138,11 +130,7 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                 })
                 .unwrap();
 
-            if file_path.is_file() {
-                fs::write(file_path.clone(), content)?;
-            } else {
-                return Err(Error::FileOpen);
-            }
+            fs::write(file_path.clone(), content)?;
 
             s.call_on_name("title_text", |view: &mut MainPanel| {
                 view.set_title(file_path.to_string_lossy())
