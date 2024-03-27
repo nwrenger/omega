@@ -2,16 +2,14 @@ use std::{env, fs, path::PathBuf};
 
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
-    views::{
-        Dialog, EditView, LinearLayout, ListView, NamedView, OnEventView, Panel, ResizedView,
-        ScrollView, SelectView, TextArea, TextView,
-    },
+    views::{Dialog, EditView, LinearLayout, ListView, ScrollView, SelectView, TextArea, TextView},
     Cursive,
 };
 
 use crate::{
     error::{Error, Result},
-    State, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME, PKG_REPOSITORY, PKG_VERSION,
+    MainPanel, State, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME, PKG_REPOSITORY,
+    PKG_VERSION,
 };
 
 /// Shows all commands
@@ -82,12 +80,12 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
     } else {
         let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
         if state.file_path.is_none() {
-            let path_str = env::current_dir()?.to_string_lossy().to_string();
+            let path = env::current_dir()?;
             s.add_layer(
                 Dialog::new()
                     .title("Save As")
                     .padding_lrtb(1, 1, 1, 0)
-                    .content(path_input(&path_str, "filepath".to_string(), false)?)
+                    .content(path_input(&path, "filepath".to_string(), false)?)
                     .button("Save", {
                         move |s: &mut Cursive| {
                             let new_path = s
@@ -115,14 +113,9 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                                 return;
                             }
 
-                            s.call_on_name(
-                                "title_text",
-                                |view: &mut Panel<
-                                    OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
-                                >| {
-                                    view.set_title(new_path.to_string_lossy())
-                                },
-                            )
+                            s.call_on_name("title_text", |view: &mut MainPanel| {
+                                view.set_title(new_path.to_string_lossy())
+                            })
                             .unwrap();
 
                             s.set_user_data(State {
@@ -151,12 +144,9 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                 return Err(Error::FileOpen);
             }
 
-            s.call_on_name(
-                "title_text",
-                |view: &mut Panel<
-                    OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>,
-                >| { view.set_title(file_path.to_string_lossy()) },
-            )
+            s.call_on_name("title_text", |view: &mut MainPanel| {
+                view.set_title(file_path.to_string_lossy())
+            })
             .unwrap();
 
             Ok(true)
@@ -172,10 +162,10 @@ pub fn open(s: &mut Cursive) -> Result<()> {
     } else {
         let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
 
-        let path_str = if let Some(path) = state.file_path {
-            path.to_string_lossy().to_string()
+        let path = if let Some(path) = state.file_path {
+            path
         } else {
-            env::current_dir()?.to_string_lossy().to_string()
+            env::current_dir()?
         };
 
         s.add_layer(
@@ -188,7 +178,7 @@ pub fn open(s: &mut Cursive) -> Result<()> {
                             "Make sure that you've saved your progress via Ctrl + s",
                         ))
                         .child(TextView::new(" "))
-                        .child(path_input(&path_str, "open_new_path".to_string(), true)?),
+                        .child(path_input(&path, "open_new_path".to_string(), true)?),
                 )
                 .button("Open", move |s| {
                     let new_path = s
@@ -210,12 +200,9 @@ pub fn open(s: &mut Cursive) -> Result<()> {
                         }
                     };
 
-                    s.call_on_name(
-                        "title_text",
-                        |view: &mut Panel<
-                            OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>,
-                        >| { view.set_title(new_path.to_string_lossy()) },
-                    )
+                    s.call_on_name("title_text", |view: &mut MainPanel| {
+                        view.set_title(new_path.to_string_lossy())
+                    })
                     .unwrap();
 
                     s.set_user_data(State {
@@ -236,9 +223,9 @@ pub fn open(s: &mut Cursive) -> Result<()> {
 /// Creates a filepath input view
 ///
 /// The name for the EditView is `name` + `_edit`, for the SelectView `name` + `_select`
-fn path_input(path: &String, name: String, files: bool) -> Result<LinearLayout> {
+fn path_input(path: &PathBuf, name: String, files: bool) -> Result<LinearLayout> {
     let mut select = SelectView::<String>::new();
-    select.add_all_str(get_paths(path, files).unwrap_or_default());
+    select.add_all_str(&get_paths(path, files).unwrap_or_default());
 
     let view_name = name.clone() + "_edit";
     let select_name = name.clone() + "_select";
@@ -247,47 +234,42 @@ fn path_input(path: &String, name: String, files: bool) -> Result<LinearLayout> 
     Ok(LinearLayout::vertical()
         .child(
             EditView::new()
-                .content(path)
+                .content(path.to_string_lossy())
                 .on_edit(move |s, new_path, _| {
-                    s.call_on_all_named(&select_name, |view: &mut SelectView| {
+                    let new_path = PathBuf::from(&new_path);
+                    s.call_on_name(&select_name, |view: &mut SelectView| {
                         view.clear();
-                        view.add_all_str(
-                            get_paths(&new_path.to_string(), files).unwrap_or_default(),
-                        );
-                    });
-                    
-                    if !files {
-                        match fs::read_to_string(new_path) {
-                            Ok(_) => {
-                                Error::AlreadyExists.to_dialog(s);
-                                return;
-                            }
-                            _ => {}
-                        };
+                        view.add_all_str(&get_paths(&new_path, files).unwrap_or_default());
+                    })
+                    .unwrap();
 
-                    }
+                    if !files && fs::read_to_string(new_path).is_ok() {
+                        Error::AlreadyExists.to_dialog(s);
+                    };
                 })
                 .with_name(name.to_string() + "_edit"),
         )
         .child(ScrollView::new(
             select
                 .on_submit(move |s, new_path: &String| {
-                    s.call_on_all_named(&view_name, |s: &mut EditView| {
+                    s.call_on_name(&view_name, |s: &mut EditView| {
                         s.set_content(new_path);
-                    });
-                    s.call_on_all_named(&select_name2, |view: &mut SelectView| {
+                    })
+                    .unwrap();
+                    s.call_on_name(&select_name2, |view: &mut SelectView| {
                         view.clear();
                         view.add_all_str(
-                            get_paths(&new_path.to_string(), files).unwrap_or_default(),
+                            &get_paths(&PathBuf::from(new_path), files).unwrap_or_default(),
                         );
-                    });
+                    })
+                    .unwrap();
                 })
                 .with_name(name.to_string() + "_select"),
         )))
 }
 
 /// Getting all paths by a path
-fn get_paths(path: &String, files: bool) -> Result<Vec<String>> {
+fn get_paths(path: &PathBuf, files: bool) -> Result<Vec<String>> {
     if let Ok(entries) = fs::read_dir(path) {
         entries
             .filter_map(|entry_result| {

@@ -17,7 +17,10 @@ use cursive::theme::Color;
 use cursive::theme::PaletteColor;
 use cursive::theme::Theme;
 use cursive::traits::*;
+use cursive::views::NamedView;
 use cursive::views::Panel;
+use cursive::views::ResizedView;
+use cursive::views::ScrollView;
 use cursive::views::{OnEventView, TextArea};
 
 use cursive_buffered_backend::BufferedBackend;
@@ -40,6 +43,9 @@ fn backend() -> Box<BufferedBackend> {
     let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
     Box::new(buffered_backend)
 }
+
+/// Helper type of the main panel
+type MainPanel = Panel<OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>>;
 
 fn main() {
     logger::init();
