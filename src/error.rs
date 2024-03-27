@@ -6,13 +6,13 @@ use cursive::{reexports::log::error, view::Nameable, views::Dialog, Cursive};
 #[repr(i64)]
 #[derive(Debug, Clone, Copy)]
 pub enum Error {
-    /// The user provided arguments are malformed
+    /// This File already exists
     AlreadyExists,
-    /// The Text could not be saved to the clipboard
+    /// The user provided arguments are malformed
     Arguments,
     /// A file could not be found, opened or saved
     FileOpen,
-    /// This File already exists
+    /// The Text could not be saved to the clipboard
     Clipboard,
 }
 
@@ -21,7 +21,7 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::AlreadyExists => write!(f, "This File already exists. Check the file path and change it fittingly.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),
+            Error::AlreadyExists => write!(f, "This filepath already exists. Saving the file now will overwrite the data of the existing file, you've been warned!\nCheck the file path and change it accordingly."),
             Error::Arguments => write!(f, "Ensure the provided arguments are correctly formatted.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),
             Error::FileOpen => write!(f, "The requested file could not be found, opened, or saved. Check the file path and permissions.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),
             Error::Clipboard => write!(f, "Failed to save/get text to/from the clipboard. Ensure your clipboard manager is running.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),

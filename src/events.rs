@@ -255,6 +255,17 @@ fn path_input(path: &String, name: String, files: bool) -> Result<LinearLayout> 
                             get_paths(&new_path.to_string(), files).unwrap_or_default(),
                         );
                     });
+                    
+                    if !files {
+                        match fs::read_to_string(new_path) {
+                            Ok(_) => {
+                                Error::AlreadyExists.to_dialog(s);
+                                return;
+                            }
+                            _ => {}
+                        };
+
+                    }
                 })
                 .with_name(name.to_string() + "_edit"),
         )
