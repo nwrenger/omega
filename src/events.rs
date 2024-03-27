@@ -94,29 +94,25 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                                 .call_on_name("filepath_edit", |view: &mut EditView| {
                                     PathBuf::from(view.get_content().to_string())
                                 })
-                                .unwrap_or_default();
+                                .unwrap();
 
                             let content = s
                                 .call_on_name("editor", |view: &mut TextArea| {
                                     view.get_content().to_string()
                                 })
-                                .unwrap_or_default();
+                                .unwrap();
 
-                            if new_path.is_file() {
-                                if !new_path.exists() {
-                                    match fs::write(new_path.clone(), content) {
-                                        Ok(_) => {}
-                                        Err(e) => {
-                                            Into::<Error>::into(e).to_dialog(s);
-                                            return;
-                                        }
+                            if !new_path.exists() {
+                                match fs::write(new_path.clone(), content) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        Into::<Error>::into(e).to_dialog(s);
+                                        return;
                                     }
-                                } else {
-                                    Error::AlreadyExists.to_dialog(s);
-                                    return;
                                 }
                             } else {
-                                Error::FileOpen.to_dialog(s);
+                                Error::AlreadyExists.to_dialog(s);
+                                return;
                             }
 
                             s.call_on_name(
@@ -127,7 +123,7 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                                     view.set_title(new_path.to_string_lossy())
                                 },
                             )
-                            .unwrap_or_default();
+                            .unwrap();
 
                             s.set_user_data(State {
                                 file_path: Some(new_path.clone()),
@@ -147,7 +143,7 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
                 .call_on_name("editor", |view: &mut TextArea| {
                     view.get_content().to_string()
                 })
-                .unwrap_or_default();
+                .unwrap();
 
             if file_path.is_file() {
                 fs::write(file_path.clone(), content)?;
@@ -157,11 +153,11 @@ pub fn save(s: &mut Cursive) -> Result<bool> {
 
             s.call_on_name(
                 "title_text",
-                |view: &mut Panel<OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>>| {
-                    view.set_title(file_path.to_string_lossy())
-                },
+                |view: &mut Panel<
+                    OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>,
+                >| { view.set_title(file_path.to_string_lossy()) },
             )
-            .unwrap_or_default();
+            .unwrap();
 
             Ok(true)
         }
@@ -199,14 +195,14 @@ pub fn open(s: &mut Cursive) -> Result<()> {
                         .call_on_name("open_new_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
                         })
-                        .unwrap_or_default();
+                        .unwrap();
 
                     match fs::read_to_string(new_path.clone()) {
                         Ok(content) => {
                             s.call_on_name("editor", |text_area: &mut TextArea| {
                                 text_area.set_content(content);
                             })
-                            .unwrap_or_default();
+                            .unwrap();
                         }
                         Err(e) => {
                             Into::<Error>::into(e).to_dialog(s);
@@ -217,10 +213,10 @@ pub fn open(s: &mut Cursive) -> Result<()> {
                     s.call_on_name(
                         "title_text",
                         |view: &mut Panel<
-                            OnEventView<ResizedView<ScrollView<NamedView<TextArea>>>>,
+                            OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>,
                         >| { view.set_title(new_path.to_string_lossy()) },
                     )
-                    .unwrap_or_default();
+                    .unwrap();
 
                     s.set_user_data(State {
                         file_path: Some(new_path),
@@ -321,7 +317,7 @@ pub fn copy(text_area: &mut TextArea) -> Result<()> {
 }
 
 /// Pasts the current clipboard
-pub fn paste(s: &mut Cursive, text_area: &mut TextArea) -> Result<()> {
+pub fn paste(text_area: &mut TextArea) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -332,13 +328,6 @@ pub fn paste(s: &mut Cursive, text_area: &mut TextArea) -> Result<()> {
     let split = lines[current_line].split_at(cursor_in_line);
     let inserted_line = split.0.to_string() + text.as_str() + split.1;
     lines[current_line] = inserted_line.as_str();
-
-    s.call_on_all_named(
-        "editor_scroll",
-        |view: &mut ScrollView<NamedView<TextArea>>| {
-            view.scroll_to_bottom();
-        },
-    );
 
     let new_content: String = lines.join("\n");
     text_area.set_content(new_content);

@@ -17,7 +17,6 @@ use cursive::theme::Color;
 use cursive::theme::PaletteColor;
 use cursive::theme::Theme;
 use cursive::traits::*;
-use cursive::view::ScrollStrategy;
 use cursive::views::Panel;
 use cursive::views::{OnEventView, TextArea};
 
@@ -85,7 +84,6 @@ fn main() {
         .content(content.clone().unwrap_or_default())
         .with_name("editor")
         .scrollable()
-        .scroll_strategy(ScrollStrategy::StickToBottom)
         .with_name("editor_scroll")
         .full_screen();
 
@@ -97,7 +95,7 @@ fn main() {
         })
         .on_pre_event(Event::CtrlChar('v'), move |s| {
             if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
-                events::paste(s, &mut text_area).handle(s);
+                events::paste(&mut text_area).handle(s);
             }
         })
         .on_pre_event(Event::CtrlChar('x'), move |s| {
