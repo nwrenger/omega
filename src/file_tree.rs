@@ -59,18 +59,23 @@ pub fn expand_tree(
 ) {
     let mut entries = Vec::new();
     if collect_entries(dir, &mut entries).is_ok() {
+        // sort entries
         entries.sort_by(|a, b| {
-            let a_is_dir = a.dir.is_some();
-            let b_is_dir = b.dir.is_some();
-
-            if a_is_dir && !b_is_dir {
-                std::cmp::Ordering::Less
-            } else if !a_is_dir && b_is_dir {
-                std::cmp::Ordering::Greater
-            } else {
-                a.name.cmp(&b.name)
-            }
+            b.dir
+                .is_some()
+                .cmp(&a.dir.is_some())
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
+
+        // due to the nature of how the tree is being created, this has to be done
+        let placement = match placement {
+            Placement::LastChild => Placement::LastChild,
+            Placement::Before => {
+                entries.reverse();
+                Placement::Before
+            }
+            _ => unimplemented!(),
+        };
 
         for i in entries {
             if i.dir.is_some() {
@@ -85,7 +90,7 @@ pub fn expand_tree(
 pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
     let mut tree = TreeView::<TreeEntry>::new();
 
-    expand_tree(&mut tree, 0, parent, Placement::After);
+    expand_tree(&mut tree, 0, parent, Placement::Before);
 
     // Lazily insert directory listings for sub nodes
     tree.set_on_collapse(|siv: &mut Cursive, row, is_collapsed, children| {

@@ -173,7 +173,7 @@ pub fn open_paths(
 
         s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
             tree.clear();
-            expand_tree(tree, 0, project_path, Placement::After)
+            expand_tree(tree, 0, project_path, Placement::Before)
         });
 
         s.set_user_data(State {
@@ -226,7 +226,7 @@ pub fn new(s: &mut Cursive) -> Result<()> {
 
                         s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                             tree.clear();
-                            expand_tree(tree, 0, &state.project_path, Placement::After)
+                            expand_tree(tree, 0, &state.project_path, Placement::Before)
                         });
 
                         s.pop_layer();
@@ -248,7 +248,7 @@ pub fn new(s: &mut Cursive) -> Result<()> {
 
                         s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                             tree.clear();
-                            expand_tree(tree, 0, &state.project_path, Placement::After)
+                            expand_tree(tree, 0, &state.project_path, Placement::Before)
                         });
 
                         s.pop_layer();
@@ -329,7 +329,7 @@ pub fn rename(s: &mut Cursive) -> Result<()> {
 
                     s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                         tree.clear();
-                        expand_tree(tree, 0, &state.project_path, Placement::After)
+                        expand_tree(tree, 0, &state.project_path, Placement::Before)
                     });
 
                     if from != to && state.project_path == from {
@@ -383,7 +383,7 @@ pub fn delete(s: &mut Cursive) -> Result<()> {
 
                     s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                         tree.clear();
-                        expand_tree(tree, 0, &state.project_path, Placement::After)
+                        expand_tree(tree, 0, &state.project_path, Placement::Before)
                     });
 
                     if state.project_path == delete_path {
@@ -493,16 +493,8 @@ fn get_paths(path: &Path, include_files: bool) -> Result<Vec<String>> {
         .collect::<Result<Vec<_>>>()?;
 
     entries.sort_by(|a, b| {
-        let a_is_dir = a.1;
-        let b_is_dir = b.1;
-
-        if a_is_dir && !b_is_dir {
-            std::cmp::Ordering::Less
-        } else if !a_is_dir && b_is_dir {
-            std::cmp::Ordering::Greater
-        } else {
-            a.0.cmp(&b.0)
-        }
+        b.1.cmp(&a.1)
+            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
     });
 
     let paths = entries.into_iter().map(|(path, _)| path).collect();
