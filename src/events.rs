@@ -31,11 +31,6 @@ pub fn info(s: &mut Cursive) -> Result<()> {
                 .content(
                     ListView::new()
                         // general info
-                        .child(
-                            "Not existing Files",
-                            TextView::new("are indicated through a '*' in the header"),
-                        )
-                        .delimiter()
                         // pck info
                         .child("Version", TextView::new(PKG_VERSION))
                         .child("Repository", TextView::new(PKG_REPOSITORY))
