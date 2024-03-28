@@ -53,7 +53,7 @@ pub fn info(siv: &mut Cursive) -> Result<()> {
                         .child("Creating a new File/Directory", TextView::new("Ctrl + n"))
                         .child("Renaming a File/Directory", TextView::new("Ctrl + r"))
                         .child("Deleting a File/Directory", TextView::new("Ctrl + d"))
-                        .child("Saving File", TextView::new("Ctrl + siv"))
+                        .child("Saving File", TextView::new("Ctrl + s"))
                         .delimiter()
                         // editor
                         .child("Copying Line", TextView::new("Ctrl + c"))
