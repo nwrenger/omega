@@ -83,7 +83,7 @@ pub fn start() {
     siv.add_global_callback(Event::CtrlChar('n'), |s| events::new(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('r'), |s| events::rename(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('d'), |s| events::delete(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s).handle(s));
+    siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, true).handle(s));
 
     let text_area = TextArea::new()
         .disabled()

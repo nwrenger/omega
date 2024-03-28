@@ -74,7 +74,7 @@ pub fn info(siv: &mut Cursive) -> Result<()> {
 
 /// Quits safely the app
 pub fn quit(siv: &mut Cursive) -> Result<()> {
-    if save(siv).is_ok() {
+    if save(siv, true).is_ok() {
         siv.quit();
     }
 
@@ -97,7 +97,7 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
                 .content(
                     LinearLayout::vertical()
                         .child(TextView::new(
-                            "Make sure that you've saved your progress via Ctrl + siv",
+                            "Make sure that you've saved your progress via Ctrl + s",
                         ))
                         .child(TextView::new(" "))
                         .child(path_input::new(
@@ -310,13 +310,11 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
             Dialog::new()
                 .title("Rename")
                 .padding_lrtb(1, 1, 1, 0)
-                .content(LinearLayout::vertical()
-                    .child(TextView::new("Make sure to save you progress via Ctrl + siv before rigorously moving files!"))
-                    .child(TextView::new(" "))
-                    .child(layout)
-                )
+                .content(layout)
                 .button("Confirm", |siv| {
-                    let state = siv.with_user_data(|state: &mut State| state.clone()).unwrap();
+                    let state = siv
+                        .with_user_data(|state: &mut State| state.clone())
+                        .unwrap();
                     let from = siv
                         .call_on_name("from_rename_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
@@ -328,6 +326,11 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                             PathBuf::from(view.get_content().to_string())
                         })
                         .unwrap();
+
+                    if let Err(e) = save(siv, true) {
+                        Into::<Error>::into(e).to_dialog(siv);
+                        return;
+                    }
 
                     if !to.exists() {
                         if let Err(e) = fs::rename(&from, &to) {
@@ -343,14 +346,18 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                         return;
                     }
 
-                    siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                        tree.clear();
-                        expand_tree(tree, 0, &state.project_path, Placement::Before)
-                    });
+                    if let Err(e) = open_paths(siv, &state.project_path, None) {
+                        Into::<Error>::into(e).to_dialog(siv);
+                        return;
+                    }
 
                     if from != to && state.project_path == from {
                         siv.pop_layer();
-                        Into::<Error>::into(io::Error::new(ErrorKind::NotFound, "Couldn't find project. It got moved")).to_dialog(siv);
+                        Into::<Error>::into(io::Error::new(
+                            ErrorKind::NotFound,
+                            "Couldn't find project. It got moved",
+                        ))
+                        .to_dialog(siv);
                         return;
                     }
 
@@ -401,10 +408,10 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
                         return;
                     }
 
-                    siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                        tree.clear();
-                        expand_tree(tree, 0, &state.project_path, Placement::Before)
-                    });
+                    if let Err(e) = open_paths(siv, &state.project_path, None) {
+                        Into::<Error>::into(e).to_dialog(siv);
+                        return;
+                    }
 
                     if state.project_path == delete_path {
                         siv.pop_layer();
@@ -427,23 +434,45 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
 }
 
 /// Save current progress + Handling Title
-pub fn save(siv: &mut Cursive) -> Result<()> {
+pub fn save(siv: &mut Cursive, force: bool) -> Result<()> {
     let state = siv
         .with_user_data(|state: &mut State| state.clone())
         .unwrap();
     if let Some(file_path) = state.file_path {
+        let old_content = fs::read_to_string(&file_path)?;
         let content = siv
             .call_on_name("editor", |view: &mut TextArea| {
                 view.get_content().to_string()
             })
             .unwrap();
 
-        fs::write(file_path.clone(), content)?;
+        if old_content != content {
+            if !force {
+                siv.add_layer(
+                    Dialog::new()
+                        .content(TextView::new(format!(
+                            "You have unsaved changes at {:?}. Want to save them?",
+                            &file_path
+                        )))
+                        .button("Yes", move |siv| {
+                            if let Err(e) = fs::write(&file_path, content.clone()) {
+                                Into::<Error>::into(e).to_dialog(siv);
+                                return;
+                            }
 
-        siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-            view.set_title(file_path.to_string_lossy())
-        })
-        .unwrap();
+                            siv.pop_layer();
+                        })
+                        .dismiss_button("No"),
+                )
+            } else {
+                fs::write(file_path.clone(), content)?;
+
+                siv.call_on_name("editor_title", |view: &mut EditorPanel| {
+                    view.set_title(file_path.to_string_lossy())
+                })
+                .unwrap();
+            }
+        }
     }
     Ok(())
 }

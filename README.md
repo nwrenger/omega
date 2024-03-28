@@ -16,7 +16,7 @@ That will open the editor. If the `path` is a file, the directory around it will
 
 On the left side is a panel with the project directory where you can easily traverse your project.
 
-Each time you click on one of the entries in the left side panel the current file will be saved, closed and the new selected file will be opened.
+Each time you click on one of the entries in the left side panel the current file will be saved (if it changed, you'll be also prompted so don't worry!), closed and the new selected file will be opened.
 
 Using the Global Keybindings you can add, edit, delete Files and Directories. Be careful with deleting, the files are getting directly deleted with no trash bin or something in between!
 

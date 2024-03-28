@@ -111,7 +111,7 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
         if let Some(tree) = siv.find_name::<TreeView<TreeEntry>>("tree") {
             if let Some(item) = tree.borrow_item(row) {
                 if item.dir.is_none() {
-                    let saved = save(siv);
+                    let saved = save(siv, false);
 
                     if saved.is_ok() {
                         let state = siv
