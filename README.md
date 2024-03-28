@@ -12,7 +12,7 @@ A performant and extensive terminal-based project editor with a wide variety of 
 ```bash
 omega [path]
 ```
-That will open the editor. If the `path` is a file the directory around it will be the project directory. Otherwise the `path` directly will be project directory.
+That will open the editor. If the `path` is a file, the directory around it will be the project directory. Otherwise the `path` directly will be project directory.
 
 On the left side is a panel with the project directory where you can easily traverse your project.
 

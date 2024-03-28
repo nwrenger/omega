@@ -6,7 +6,11 @@ use cursive::{
 use cursive_tree_view::{Placement, TreeView};
 use std::{fmt, fs, io, path::PathBuf};
 
-use crate::{error::Error, events::save, EditorPanel, State};
+use crate::{
+    app::{EditorPanel, State},
+    error::Error,
+    events::save,
+};
 
 #[derive(Debug)]
 pub struct TreeEntry {
@@ -103,35 +107,37 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
         }
     });
 
-    tree.set_on_submit(move |s: &mut Cursive, row| {
-        if let Some(tree) = s.find_name::<TreeView<TreeEntry>>("tree") {
+    tree.set_on_submit(move |siv: &mut Cursive, row| {
+        if let Some(tree) = siv.find_name::<TreeView<TreeEntry>>("tree") {
             if let Some(item) = tree.borrow_item(row) {
                 if item.dir.is_none() {
-                    let saved = save(s);
+                    let saved = save(siv);
 
                     if saved.is_ok() {
-                        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
+                        let state = siv
+                            .with_user_data(|state: &mut State| state.clone())
+                            .unwrap();
 
                         match fs::read_to_string(&item.path) {
                             Ok(content) => {
-                                s.call_on_name("editor", |text_area: &mut TextArea| {
+                                siv.call_on_name("editor", |text_area: &mut TextArea| {
                                     text_area.set_content(content);
                                     text_area.enable();
                                 })
                                 .unwrap();
                             }
                             Err(e) => {
-                                Into::<Error>::into(e).to_dialog(s);
+                                Into::<Error>::into(e).to_dialog(siv);
                                 return;
                             }
                         };
 
-                        s.call_on_name("editor_title", |view: &mut EditorPanel| {
+                        siv.call_on_name("editor_title", |view: &mut EditorPanel| {
                             view.set_title(item.path.to_string_lossy())
                         })
                         .unwrap();
 
-                        s.set_user_data(State {
+                        siv.set_user_data(State {
                             file_path: Some(item.path.to_path_buf()),
                             ..state
                         });

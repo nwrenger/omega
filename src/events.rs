@@ -6,24 +6,29 @@ use std::{
 
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
-    views::{Dialog, EditView, LinearLayout, ListView, ScrollView, SelectView, TextArea, TextView},
+    views::{Dialog, EditView, LinearLayout, ListView, TextArea, TextView},
     Cursive,
 };
 use cursive_tree_view::{Placement, TreeView};
 
 use crate::{
+    app::{
+        EditorPanel, State, TreePanel, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME,
+        PKG_REPOSITORY, PKG_VERSION,
+    },
     error::{Error, Result},
-    file_tree::{expand_tree, TreeEntry},
-    EditorPanel, State, TreePanel, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME,
-    PKG_REPOSITORY, PKG_VERSION,
+    ui::{
+        file_tree::{expand_tree, TreeEntry},
+        path_input,
+    },
 };
 
 /// Shows all commands
-pub fn info(s: &mut Cursive) -> Result<()> {
-    if let Some(pos) = s.screen_mut().find_layer_from_name("info") {
-        s.screen_mut().remove_layer(pos);
+pub fn info(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("info") {
+        siv.screen_mut().remove_layer(pos);
     } else {
-        s.add_layer(
+        siv.add_layer(
             Dialog::new()
                 .title(format!("{PKG_NAME} - Info"))
                 .padding_lrtb(1, 1, 1, 0)
@@ -48,7 +53,7 @@ pub fn info(s: &mut Cursive) -> Result<()> {
                         .child("Creating a new File/Directory", TextView::new("Ctrl + n"))
                         .child("Renaming a File/Directory", TextView::new("Ctrl + r"))
                         .child("Deleting a File/Directory", TextView::new("Ctrl + d"))
-                        .child("Saving File", TextView::new("Ctrl + s"))
+                        .child("Saving File", TextView::new("Ctrl + siv"))
                         .delimiter()
                         // editor
                         .child("Copying Line", TextView::new("Ctrl + c"))
@@ -68,46 +73,48 @@ pub fn info(s: &mut Cursive) -> Result<()> {
 }
 
 /// Quits safely the app
-pub fn quit(s: &mut Cursive) -> Result<()> {
-    if save(s).is_ok() {
-        s.quit();
+pub fn quit(siv: &mut Cursive) -> Result<()> {
+    if save(siv).is_ok() {
+        siv.quit();
     }
 
     Ok(())
 }
 
 /// Opens a new file safely with saving the current file
-pub fn open(s: &mut Cursive) -> Result<()> {
-    if let Some(pos) = s.screen_mut().find_layer_from_name("open") {
-        s.screen_mut().remove_layer(pos);
+pub fn open(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("open") {
+        siv.screen_mut().remove_layer(pos);
         Ok(())
     } else {
-        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-        s.add_layer(
+        let state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap();
+        siv.add_layer(
             Dialog::new()
                 .title("Open")
                 .padding_lrtb(1, 1, 1, 0)
                 .content(
                     LinearLayout::vertical()
                         .child(TextView::new(
-                            "Make sure that you've saved your progress via Ctrl + s",
+                            "Make sure that you've saved your progress via Ctrl + siv",
                         ))
                         .child(TextView::new(" "))
-                        .child(path_input(
+                        .child(path_input::new(
                             &state.project_path,
                             "open_new_path".to_string(),
                             true,
                         )?),
                 )
-                .button("Open", move |s| {
-                    let inc_path = s
+                .button("Open", move |siv| {
+                    let inc_path = siv
                         .call_on_name("open_new_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
                         })
                         .unwrap();
 
                     let mut file_path = None;
-                    let mut project_path = PathBuf::new();
+                    let mut project_path = PathBuf::from("/");
 
                     if inc_path.is_file() {
                         file_path = Some(inc_path.clone());
@@ -116,12 +123,12 @@ pub fn open(s: &mut Cursive) -> Result<()> {
                         project_path = inc_path;
                     }
 
-                    if let Err(e) = open_paths(s, &project_path, file_path.as_ref()) {
-                        Into::<Error>::into(e).to_dialog(s);
+                    if let Err(e) = open_paths(siv, &project_path, file_path.as_ref()) {
+                        Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
 
-                    s.pop_layer();
+                    siv.pop_layer();
                 })
                 .dismiss_button("Cancel")
                 .full_width()
@@ -132,20 +139,21 @@ pub fn open(s: &mut Cursive) -> Result<()> {
     }
 }
 
+/// Updates the ui accordingly to the paths
 pub fn open_paths(
-    s: &mut Cursive,
+    siv: &mut Cursive,
     project_path: &PathBuf,
     file_path: Option<&PathBuf>,
 ) -> Result<()> {
     if let Some(file_path) = file_path {
         match fs::read_to_string(file_path) {
             Ok(content) => {
-                s.call_on_name("editor", |text_area: &mut TextArea| {
+                siv.call_on_name("editor", |text_area: &mut TextArea| {
                     text_area.set_content(content);
                     text_area.enable();
                 })
                 .unwrap();
-                s.call_on_name("editor_title", |view: &mut EditorPanel| {
+                siv.call_on_name("editor_title", |view: &mut EditorPanel| {
                     view.set_title(file_path.to_string_lossy())
                 })
                 .unwrap();
@@ -155,28 +163,28 @@ pub fn open_paths(
             }
         };
     } else if project_path.exists() {
-        s.call_on_name("editor", |text_area: &mut TextArea| {
+        siv.call_on_name("editor", |text_area: &mut TextArea| {
             text_area.set_content(' ');
             text_area.set_cursor(0);
             text_area.disable();
         })
         .unwrap();
-        s.call_on_name("editor_title", |view: &mut EditorPanel| view.set_title(""))
+        siv.call_on_name("editor_title", |view: &mut EditorPanel| view.set_title(""))
             .unwrap();
     }
     if project_path.exists() {
-        s.call_on_name("tree_title", |view: &mut TreePanel| {
+        siv.call_on_name("tree_title", |view: &mut TreePanel| {
             view.get_inner_mut()
                 .set_title(project_path.to_string_lossy())
         })
         .unwrap();
 
-        s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
             tree.clear();
             expand_tree(tree, 0, project_path, Placement::Before)
         });
 
-        s.set_user_data(State {
+        siv.set_user_data(State {
             file_path: file_path.cloned(),
             project_path: project_path.to_path_buf(),
         });
@@ -192,24 +200,28 @@ pub fn open_paths(
 }
 
 /// Creates a new file
-pub fn new(s: &mut Cursive) -> Result<()> {
-    if let Some(pos) = s.screen_mut().find_layer_from_name("new") {
-        s.screen_mut().remove_layer(pos);
+pub fn new(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("new") {
+        siv.screen_mut().remove_layer(pos);
     } else {
-        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-        s.add_layer(
+        let state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap();
+        siv.add_layer(
             Dialog::new()
                 .title("Create As")
                 .padding_lrtb(1, 1, 1, 0)
-                .content(path_input(
+                .content(path_input::new(
                     &state.project_path,
                     "new_path".to_string(),
                     false,
                 )?)
                 .button("A File", {
-                    move |s: &mut Cursive| {
-                        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-                        let new_path = s
+                    move |siv: &mut Cursive| {
+                        let state = siv
+                            .with_user_data(|state: &mut State| state.clone())
+                            .unwrap();
+                        let new_path = siv
                             .call_on_name("new_path_edit", |view: &mut EditView| {
                                 PathBuf::from(view.get_content().to_string())
                             })
@@ -220,38 +232,40 @@ pub fn new(s: &mut Cursive) -> Result<()> {
                             .create_new(true)
                             .open(new_path)
                         {
-                            Into::<Error>::into(e).to_dialog(s);
+                            Into::<Error>::into(e).to_dialog(siv);
                             return;
                         }
 
-                        s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+                        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                             tree.clear();
                             expand_tree(tree, 0, &state.project_path, Placement::Before)
                         });
 
-                        s.pop_layer();
+                        siv.pop_layer();
                     }
                 })
                 .button("A Directory", {
-                    move |s: &mut Cursive| {
-                        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-                        let new_path = s
+                    move |siv: &mut Cursive| {
+                        let state = siv
+                            .with_user_data(|state: &mut State| state.clone())
+                            .unwrap();
+                        let new_path = siv
                             .call_on_name("new_path_edit", |view: &mut EditView| {
                                 PathBuf::from(view.get_content().to_string())
                             })
                             .unwrap();
 
                         if let Err(e) = fs::create_dir_all(new_path) {
-                            Into::<Error>::into(e).to_dialog(s);
+                            Into::<Error>::into(e).to_dialog(siv);
                             return;
                         }
 
-                        s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+                        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                             tree.clear();
                             expand_tree(tree, 0, &state.project_path, Placement::Before)
                         });
 
-                        s.pop_layer();
+                        siv.pop_layer();
                     }
                 })
                 .dismiss_button("Cancel")
@@ -263,16 +277,18 @@ pub fn new(s: &mut Cursive) -> Result<()> {
 }
 
 /// Rename(+move) a file/directory
-pub fn rename(s: &mut Cursive) -> Result<()> {
-    if let Some(pos) = s.screen_mut().find_layer_from_name("rename") {
-        s.screen_mut().remove_layer(pos);
+pub fn rename(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("rename") {
+        siv.screen_mut().remove_layer(pos);
     } else {
-        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
+        let state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap();
         let layout = LinearLayout::horizontal()
             .child(
                 LinearLayout::vertical()
                     .child(TextView::new("From"))
-                    .child(path_input(
+                    .child(path_input::new(
                         &state.project_path,
                         "from_rename_path".to_string(),
                         true,
@@ -283,31 +299,31 @@ pub fn rename(s: &mut Cursive) -> Result<()> {
             .child(
                 LinearLayout::vertical()
                     .child(TextView::new("To"))
-                    .child(path_input(
+                    .child(path_input::new(
                         &state.project_path,
                         "to_rename_path".to_string(),
                         false,
                     )?)
                     .full_width(),
             );
-        s.add_layer(
+        siv.add_layer(
             Dialog::new()
                 .title("Rename")
                 .padding_lrtb(1, 1, 1, 0)
                 .content(LinearLayout::vertical()
-                    .child(TextView::new("Make sure to save you progress via Ctrl + s before rigorously moving files!"))
+                    .child(TextView::new("Make sure to save you progress via Ctrl + siv before rigorously moving files!"))
                     .child(TextView::new(" "))
                     .child(layout)
                 )
-                .button("Confirm", |s| {
-                    let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-                    let from = s
+                .button("Confirm", |siv| {
+                    let state = siv.with_user_data(|state: &mut State| state.clone()).unwrap();
+                    let from = siv
                         .call_on_name("from_rename_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
                         })
                         .unwrap();
 
-                    let to = s
+                    let to = siv
                         .call_on_name("to_rename_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
                         })
@@ -315,7 +331,7 @@ pub fn rename(s: &mut Cursive) -> Result<()> {
 
                     if !to.exists() {
                         if let Err(e) = fs::rename(&from, &to) {
-                            Into::<Error>::into(e).to_dialog(s);
+                            Into::<Error>::into(e).to_dialog(siv);
                             return;
                         }
                     } else {
@@ -323,22 +339,22 @@ pub fn rename(s: &mut Cursive) -> Result<()> {
                             io::ErrorKind::AlreadyExists,
                             "Destination already exists",
                         ))
-                        .to_dialog(s);
+                        .to_dialog(siv);
                         return;
                     }
 
-                    s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+                    siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                         tree.clear();
                         expand_tree(tree, 0, &state.project_path, Placement::Before)
                     });
 
                     if from != to && state.project_path == from {
-                        s.pop_layer();
-                        Into::<Error>::into(io::Error::new(ErrorKind::NotFound, "Couldn't find project. It got moved")).to_dialog(s);
+                        siv.pop_layer();
+                        Into::<Error>::into(io::Error::new(ErrorKind::NotFound, "Couldn't find project. It got moved")).to_dialog(siv);
                         return;
                     }
 
-                    s.pop_layer();
+                    siv.pop_layer();
                 })
                 .dismiss_button("Cancel")
                 .full_width()
@@ -349,23 +365,27 @@ pub fn rename(s: &mut Cursive) -> Result<()> {
 }
 
 /// Delete a file/directory(recursively)
-pub fn delete(s: &mut Cursive) -> Result<()> {
-    if let Some(pos) = s.screen_mut().find_layer_from_name("delete") {
-        s.screen_mut().remove_layer(pos);
+pub fn delete(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("delete") {
+        siv.screen_mut().remove_layer(pos);
     } else {
-        let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-        s.add_layer(
+        let state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap();
+        siv.add_layer(
             Dialog::new()
                 .title("Delete")
                 .padding_lrtb(1, 1, 1, 0)
-                .content(path_input(
+                .content(path_input::new(
                     &state.project_path,
                     "delete_path".to_string(),
                     true,
                 )?)
-                .button("Confirm", |s| {
-                    let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
-                    let delete_path = s
+                .button("Confirm", |siv| {
+                    let state = siv
+                        .with_user_data(|state: &mut State| state.clone())
+                        .unwrap();
+                    let delete_path = siv
                         .call_on_name("delete_path_edit", |view: &mut EditView| {
                             PathBuf::from(view.get_content().to_string())
                         })
@@ -373,30 +393,30 @@ pub fn delete(s: &mut Cursive) -> Result<()> {
 
                     if delete_path.is_dir() {
                         if let Err(e) = fs::remove_dir_all(&delete_path) {
-                            Into::<Error>::into(e).to_dialog(s);
+                            Into::<Error>::into(e).to_dialog(siv);
                             return;
                         }
                     } else if let Err(e) = fs::remove_file(&delete_path) {
-                        Into::<Error>::into(e).to_dialog(s);
+                        Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
 
-                    s.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+                    siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
                         tree.clear();
                         expand_tree(tree, 0, &state.project_path, Placement::Before)
                     });
 
                     if state.project_path == delete_path {
-                        s.pop_layer();
+                        siv.pop_layer();
                         Into::<Error>::into(io::Error::new(
                             ErrorKind::NotFound,
                             "Couldn't find project. It got deleted",
                         ))
-                        .to_dialog(s);
+                        .to_dialog(siv);
                         return;
                     }
 
-                    s.pop_layer();
+                    siv.pop_layer();
                 })
                 .dismiss_button("Cancel")
                 .full_width()
@@ -407,10 +427,12 @@ pub fn delete(s: &mut Cursive) -> Result<()> {
 }
 
 /// Save current progress + Handling Title
-pub fn save(s: &mut Cursive) -> Result<()> {
-    let state = s.with_user_data(|state: &mut State| state.clone()).unwrap();
+pub fn save(siv: &mut Cursive) -> Result<()> {
+    let state = siv
+        .with_user_data(|state: &mut State| state.clone())
+        .unwrap();
     if let Some(file_path) = state.file_path {
-        let content = s
+        let content = siv
             .call_on_name("editor", |view: &mut TextArea| {
                 view.get_content().to_string()
             })
@@ -418,88 +440,12 @@ pub fn save(s: &mut Cursive) -> Result<()> {
 
         fs::write(file_path.clone(), content)?;
 
-        s.call_on_name("editor_title", |view: &mut EditorPanel| {
+        siv.call_on_name("editor_title", |view: &mut EditorPanel| {
             view.set_title(file_path.to_string_lossy())
         })
         .unwrap();
     }
     Ok(())
-}
-
-/// Creates a filepath input view
-///
-/// The name for the EditView is `name` + `_edit`, for the SelectView `name` + `_select`
-fn path_input(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
-    let mut select = SelectView::<String>::new();
-    select.add_all_str(&get_paths(path, files).unwrap_or_default());
-
-    let view_name = name.clone() + "_edit";
-    let select_name = name.clone() + "_select";
-    let select_name2 = name.clone() + "_select";
-
-    Ok(LinearLayout::vertical()
-        .child(
-            EditView::new()
-                .content(path.to_string_lossy())
-                .on_edit(move |s, new_path, _| {
-                    let new_path = PathBuf::from(&new_path);
-                    s.call_on_name(&select_name, |view: &mut SelectView| {
-                        view.clear();
-                        view.add_all_str(&get_paths(&new_path, files).unwrap_or_default());
-                    })
-                    .unwrap();
-                })
-                .with_name(name.to_string() + "_edit"),
-        )
-        .child(ScrollView::new(
-            select
-                .on_submit(move |s, new_path: &String| {
-                    s.call_on_name(&view_name, |s: &mut EditView| {
-                        s.set_content(new_path);
-                    })
-                    .unwrap();
-                    s.call_on_name(&select_name2, |view: &mut SelectView| {
-                        view.clear();
-                        view.add_all_str(
-                            &get_paths(&PathBuf::from(new_path), files).unwrap_or_default(),
-                        );
-                    })
-                    .unwrap();
-                })
-                .with_name(name.to_string() + "_select"),
-        )))
-}
-
-/// Getting all paths by a path
-fn get_paths(path: &Path, include_files: bool) -> Result<Vec<String>> {
-    let mut entries: Vec<(String, bool)> = fs::read_dir(path)?
-        .filter_map(|entry_result| match entry_result {
-            Ok(entry) => {
-                let path = entry.path();
-                match entry.file_type() {
-                    Ok(file_type) => {
-                        if file_type.is_dir() || (include_files && file_type.is_file()) {
-                            let name = path.to_string_lossy().into_owned();
-                            Some(Ok((name, file_type.is_dir())))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => Some(Err(e.into())),
-                }
-            }
-            Err(e) => Some(Err(e.into())),
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    entries.sort_by(|a, b| {
-        b.1.cmp(&a.1)
-            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
-    });
-
-    let paths = entries.into_iter().map(|(path, _)| path).collect();
-
-    Ok(paths)
 }
 
 /// Copies the line where the cursor currently is
