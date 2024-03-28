@@ -3,7 +3,7 @@
 
 # `omega`
 
-A performant and extensive terminal-based file editor with a wide variety of modern shortcuts.
+A performant and extensive terminal-based project editor with a wide variety of modern shortcuts.
 
 <img src="images/screenshot.png" width="650"/>
 
@@ -12,22 +12,27 @@ A performant and extensive terminal-based file editor with a wide variety of mod
 ```bash
 omega [path]
 ```
-That will open a file and the editor itself.
+That will open the editor. If the `path` is a file the directory around it will be the project directory. Otherwise the `path` directly will be project directory.
 
-`path` can only be a file, not a directory.
+On the left side is a panel with the project directory where you can easily traverse your project.
 
-When specifying a not existing/invalid path the editor displays that in the top right via a `*` after the path (if no path is specified only the `*` will be visible).
+Each time you click on one of the entries in the left side panel the current file will be saved, closed and the new selected file will be opened.
+
+Using the Global Keybindings you can add, edit, delete Files and Directories. Be careful with deleting, the files are getting directly deleted with no trash bin or something in between!
 
 ## Bindings
 
-| Global          | Keybinding   |
-| --------------- | ------------ |
-| Infos           | `Ctrl` + `z` |
-| Toggle debugger | `Ctrl` + `d` |
-| Quitting        | `Ctrl` + `q` |
-| Force Quitting  | `Ctrl` + `f` |
-| Saving File     | `Ctrl` + `s` |
-| Opening a File  | `Ctrl` + `o` |
+| Global                        | Keybinding   |
+| ----------------------------- | ------------ |
+| Infos                         | `Esc`        |
+| Toggle debugger               | `Ctrl` + `p` |
+| Quitting                      | `Ctrl` + `q` |
+| Force Quitting                | `Ctrl` + `f` |
+| Opening a File/Project        | `Ctrl` + `o` |
+| Creating a new File/Directory | `Ctrl` + `n` |
+| Renaming a File/Directory     | `Ctrl` + `r` |
+| Deleting a File/Directory     | `Ctrl` + `d` |
+| Saving File                   | `Ctrl` + `s` |
 
 | Editor             | Keybinding                                    |
 | ------------------ | --------------------------------------------- |

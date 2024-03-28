@@ -9,7 +9,9 @@ pub fn get_content() -> Result<String> {
     if let Some(ClipperData::Text(text)) = clipboard.read() {
         Ok(text.to_string())
     } else {
-        Err(Error::Clipboard)
+        Err(Error::Clipboard(
+            "Pasted in Something which isn't Text, f.e. a picture".to_string(),
+        ))
     }
 }
 

@@ -4,16 +4,14 @@ use cursive::{reexports::log::error, view::Nameable, views::Dialog, Cursive};
 
 /// The error type.
 #[repr(i64)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Error {
-    /// This File already exists, this can be seen more than a warning than a real error
-    AlreadyExists,
     /// The user provided arguments are malformed
-    Arguments,
+    Arguments(String),
     /// A file could not be found, opened or saved
-    FileOpen,
+    FileOpen(String),
     /// The Text could not be saved to the clipboard
-    Clipboard,
+    Clipboard(String),
 }
 
 impl std::error::Error for Error {}
@@ -21,32 +19,31 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::AlreadyExists => write!(f, "This filepath already exists. Saving the file now will overwrite the data of the existing file, you've been warned!\nCheck the file path and change it accordingly."),
-            Error::Arguments => write!(f, "Ensure the provided arguments are correctly formatted.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),
-            Error::FileOpen => write!(f, "The requested file could not be found, opened, or saved. Check the file path and permissions.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),
-            Error::Clipboard => write!(f, "Failed to save/get text to/from the clipboard. Ensure your clipboard manager is running.\nForce quit via ctrl + f or toggle the debugger via ctrl + d"),
+            Error::Arguments(e) => write!(f, "Arguments: {e}.\nForce quit via ctrl + f or toggle the goto via ctrl + d"),
+            Error::FileOpen(e) => write!(f, "File System Error: {e}. Check the file path and permissions.\nForce quit via ctrl + f or toggle the goto via ctrl + o"),
+            Error::Clipboard(e) => write!(f, "Clipboard: {e}. Ensure your clipboard manager is running.\nForce quit via ctrl + f or toggle the goto via ctrl + d"),
         }
     }
 }
 
 impl From<std::convert::Infallible> for Error {
     fn from(e: std::convert::Infallible) -> Self {
-        error!("convert::Infallible: {e:?}");
-        Self::Arguments
+        error!("convert::Infallible: {e}");
+        Self::Arguments(e.to_string())
     }
 }
 
 impl From<clippers::Error> for Error {
-    fn from(value: clippers::Error) -> Self {
-        error!("clippers::Error: {value:?}");
-        Self::Clipboard
+    fn from(e: clippers::Error) -> Self {
+        error!("clippers::Error: {e}");
+        Self::Clipboard(e.to_string())
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         error!("File Error: {e}");
-        Self::FileOpen
+        Self::FileOpen(e.to_string())
     }
 }
 
@@ -57,32 +54,15 @@ impl Error {
             siv.screen_mut().remove_layer(pos);
         }
         let error_message = self.to_string();
-        match self {
-            // more a warn
-            Error::AlreadyExists => {
-                siv.add_layer(
-                    Dialog::text(error_message)
-                        .title("Warning")
-                        .padding_lrtb(1, 1, 1, 0)
-                        .button("Ok", |s| {
-                            s.pop_layer();
-                        })
-                        .with_name("error"),
-                );
-            }
-            // real errors
-            Error::Arguments | Error::FileOpen | Error::Clipboard => {
-                siv.add_layer(
-                    Dialog::text(error_message)
-                        .title("Error")
-                        .padding_lrtb(1, 1, 1, 0)
-                        .button("Ok", |s| {
-                            s.pop_layer();
-                        })
-                        .with_name("error"),
-                );
-            }
-        }
+        siv.add_layer(
+            Dialog::text(error_message)
+                .title("Error")
+                .padding_lrtb(1, 1, 1, 0)
+                .button("Ok", |s| {
+                    s.pop_layer();
+                })
+                .with_name("error"),
+        );
     }
 }
 
