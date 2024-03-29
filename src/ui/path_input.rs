@@ -14,67 +14,101 @@ use crate::error::Result;
 ///
 /// The name for the EditView is `name` + `"_edit"`, for the SelectView `name` + `"_select"`
 pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
-    let mut select = SelectView::<String>::new();
-    select.add_all_str(&get_paths(path, files).unwrap_or_default());
-
     let view_name = name.clone() + "_edit";
     let select_name = name.clone() + "_select";
-    let select_name2 = name.clone() + "_select";
+
+    let mut select = SelectView::<String>::new();
+
+    let view_name_clone = view_name.clone();
+    let select_name_clone = select_name.clone();
+    select.set_on_submit(move |siv, new_path: &String| {
+        siv.call_on_name(&view_name_clone, |siv: &mut EditView| {
+            siv.set_content(new_path);
+        })
+        .unwrap();
+        siv.call_on_name(&select_name_clone, |view: &mut SelectView| {
+            view.clear();
+            view.add_all_str(&get_paths(&PathBuf::from(new_path), files).unwrap_or_default());
+        })
+        .unwrap();
+    });
+
+    select.add_all_str(&get_paths(path, files).unwrap_or_default());
+
+    let mut edit_view = EditView::new().content(path.to_string_lossy());
+
+    let select_name_clone = select_name.clone();
+    edit_view.set_on_edit(move |siv, new_path, _| {
+        let new_path = PathBuf::from(&new_path);
+        siv.call_on_name(&select_name_clone, |view: &mut SelectView| {
+            view.clear();
+            view.add_all_str(&get_paths(&new_path, files).unwrap_or_default());
+        })
+        .unwrap();
+    });
+
+    let view_name_clone = view_name.clone();
+    let select_name_clone = select_name.clone();
+    edit_view.set_on_submit(move |siv, _| {
+        let selected = siv
+            .call_on_name(&select_name_clone, |select: &mut SelectView| {
+                select.selection()
+            })
+            .unwrap();
+
+        if let Some(selected) = selected {
+            siv.call_on_name(&view_name_clone, |edit_view: &mut EditView| {
+                edit_view.set_content(selected.parse::<String>().unwrap_or_default());
+            })
+            .unwrap();
+        }
+    });
 
     Ok(LinearLayout::vertical()
-        .child(
-            EditView::new()
-                .content(path.to_string_lossy())
-                .on_edit(move |siv, new_path, _| {
-                    let new_path = PathBuf::from(&new_path);
-                    siv.call_on_name(&select_name, |view: &mut SelectView| {
-                        view.clear();
-                        view.add_all_str(&get_paths(&new_path, files).unwrap_or_default());
-                    })
-                    .unwrap();
-                })
-                .with_name(name.to_string() + "_edit"),
-        )
-        .child(ScrollView::new(
-            select
-                .on_submit(move |siv, new_path: &String| {
-                    siv.call_on_name(&view_name, |siv: &mut EditView| {
-                        siv.set_content(new_path);
-                    })
-                    .unwrap();
-                    siv.call_on_name(&select_name2, |view: &mut SelectView| {
-                        view.clear();
-                        view.add_all_str(
-                            &get_paths(&PathBuf::from(new_path), files).unwrap_or_default(),
-                        );
-                    })
-                    .unwrap();
-                })
-                .with_name(name.to_string() + "_select"),
-        )))
+        .child(edit_view.with_name(view_name))
+        .child(ScrollView::new(select.with_name(select_name))))
 }
 
-/// Getting all paths by a path
+/// Getting all paths by a path with search functionality for incomplete paths.
 fn get_paths(path: &Path, include_files: bool) -> Result<Vec<String>> {
-    let mut entries: Vec<(String, bool)> = fs::read_dir(path)?
-        .filter_map(|entry_result| match entry_result {
-            Ok(entry) => {
-                let path = entry.path();
-                match entry.file_type() {
-                    Ok(file_type) => {
-                        if file_type.is_dir() || (include_files && file_type.is_file()) {
-                            let name = path.to_string_lossy().into_owned();
-                            Some(Ok((name, file_type.is_dir())))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => Some(Err(e.into())),
-                }
+    let entries_result = fs::read_dir(path);
+
+    let (dir_to_read, filter_prefix) = if entries_result.is_err() {
+        let parent_dir = path.parent().unwrap_or_else(|| Path::new("/"));
+        let filter_prefix = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        (parent_dir, Some(filter_prefix))
+    } else {
+        (path, None)
+    };
+
+    let mut entries = fs::read_dir(dir_to_read)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            if let Some(ref prefix) = filter_prefix {
+                entry.file_name().to_string_lossy().starts_with(prefix)
+            } else {
+                true
             }
-            Err(e) => Some(Err(e.into())),
         })
-        .collect::<Result<Vec<_>>>()?;
+        .filter_map(|entry| {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(file_type) => {
+                    if file_type.is_dir() || (include_files && file_type.is_file()) {
+                        let name = path.to_string_lossy().into_owned();
+                        Some((name, file_type.is_dir()))
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
+            }
+        })
+        .collect::<Vec<_>>();
 
     entries.sort_by(|a, b| {
         b.1.cmp(&a.1)
@@ -82,6 +116,5 @@ fn get_paths(path: &Path, include_files: bool) -> Result<Vec<String>> {
     });
 
     let paths = entries.into_iter().map(|(path, _)| path).collect();
-
     Ok(paths)
 }

@@ -6,18 +6,19 @@ use std::{
 
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
-    views::{Dialog, EditView, LinearLayout, ListView, TextArea, TextView},
+    views::{Dialog, EditView, LinearLayout, ListView, TextView},
     Cursive,
 };
 use cursive_tree_view::{Placement, TreeView};
 
 use crate::{
     app::{
-        EditorPanel, State, TreePanel, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME,
-        PKG_REPOSITORY, PKG_VERSION,
+        EditorPanel, FileData, State, TreePanel, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE,
+        PKG_NAME, PKG_REPOSITORY, PKG_VERSION,
     },
-    error::{Error, Result},
+    error::{Error, Result, ResultExt},
     ui::{
+        edit_area::EditArea,
         file_tree::{expand_tree, TreeEntry},
         path_input,
     },
@@ -36,6 +37,11 @@ pub fn info(siv: &mut Cursive) -> Result<()> {
                 .content(
                     ListView::new()
                         // general info
+                        .child(
+                            "A `*` in the Title indicates that",
+                            TextView::new("the current file has been edited"),
+                        )
+                        .delimiter()
                         // pck info
                         .child("Version", TextView::new(PKG_VERSION))
                         .child("Repository", TextView::new(PKG_REPOSITORY))
@@ -74,8 +80,45 @@ pub fn info(siv: &mut Cursive) -> Result<()> {
 
 /// Quits safely the app
 pub fn quit(siv: &mut Cursive) -> Result<()> {
-    if save(siv, true).is_ok() {
+    let state = siv
+        .with_user_data(|state: &mut State| state.clone())
+        .unwrap();
+
+    let edited_files = state
+        .files_edited
+        .into_iter() // Note the change to into_iter to consume the map
+        .filter(|(_, edited)| *edited)
+        .map(|(path, _)| path)
+        .collect::<Vec<PathBuf>>(); // Now owns PathBuf instead of &PathBuf
+
+    if edited_files.is_empty() {
         siv.quit();
+    } else {
+        let mut layout =
+            LinearLayout::vertical().child(TextView::new("You have unsaved changes in: "));
+        for i in &edited_files {
+            layout.add_child(TextView::new(i.to_string_lossy()));
+        }
+
+        // Clone edited_files for use in the Save closure
+        let edited_files_for_save = edited_files.clone();
+        siv.add_layer(
+            Dialog::new()
+                .content(layout)
+                .button("Save", move |siv| {
+                    for i in &edited_files_for_save {
+                        let binding = &FileData::default();
+                        let content = &state.files.get(i).unwrap_or(binding).str;
+                        save(siv, Some((i, content))).handle(siv);
+                    }
+                    siv.quit();
+                })
+                .button("Dismiss", |siv| {
+                    siv.pop_layer();
+                    siv.quit();
+                })
+                .dismiss_button("Cancel Closing"),
+        );
     }
 
     Ok(())
@@ -113,17 +156,17 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
                         })
                         .unwrap();
 
-                    let mut file_path = None;
+                    let mut current_file = None;
                     let mut project_path = PathBuf::from("/");
 
                     if inc_path.is_file() {
-                        file_path = Some(inc_path.clone());
+                        current_file = Some(inc_path.clone());
                         project_path = PathBuf::from(inc_path.parent().unwrap_or(Path::new("/")));
                     } else if inc_path.is_dir() {
                         project_path = inc_path;
                     }
 
-                    if let Err(e) = open_paths(siv, &project_path, file_path.as_ref()) {
+                    if let Err(e) = open_paths(siv, &project_path, current_file.as_ref()) {
                         Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
@@ -143,27 +186,35 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
 pub fn open_paths(
     siv: &mut Cursive,
     project_path: &PathBuf,
-    file_path: Option<&PathBuf>,
+    current_file: Option<&PathBuf>,
 ) -> Result<()> {
-    if let Some(file_path) = file_path {
-        match fs::read_to_string(file_path) {
+    if let Some(current_file) = current_file {
+        match fs::read_to_string(current_file) {
             Ok(content) => {
-                siv.call_on_name("editor", |text_area: &mut TextArea| {
-                    text_area.set_content(content);
+                siv.call_on_name("editor", |text_area: &mut EditArea| {
+                    text_area.set_content(content.clone());
                     text_area.enable();
                 })
                 .unwrap();
                 siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-                    view.set_title(file_path.to_string_lossy())
+                    view.set_title(current_file.to_string_lossy())
                 })
                 .unwrap();
+
+                let mut state = siv
+                    .with_user_data(|state: &mut State| state.clone())
+                    .unwrap_or_default();
+
+                siv.set_user_data(
+                    state.open_new_file(current_file.to_path_buf(), FileData { str: content }),
+                );
             }
             Err(e) => {
                 return Err(e.into());
             }
         };
     } else if project_path.exists() {
-        siv.call_on_name("editor", |text_area: &mut TextArea| {
+        siv.call_on_name("editor", |text_area: &mut EditArea| {
             text_area.set_content(' ');
             text_area.set_cursor(0);
             text_area.disable();
@@ -184,10 +235,11 @@ pub fn open_paths(
             expand_tree(tree, 0, project_path, Placement::Before)
         });
 
-        siv.set_user_data(State {
-            file_path: file_path.cloned(),
-            project_path: project_path.to_path_buf(),
-        });
+        let mut state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap_or_default();
+
+        siv.set_user_data(state.open_new_project(project_path, current_file));
     } else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -284,27 +336,34 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
         let state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap();
-        let layout = LinearLayout::horizontal()
-            .child(
-                LinearLayout::vertical()
-                    .child(TextView::new("From"))
-                    .child(path_input::new(
-                        &state.project_path,
-                        "from_rename_path".to_string(),
-                        true,
-                    )?)
-                    .full_width(),
-            )
+        let layout = LinearLayout::vertical()
+            .child(TextView::new(
+                "Note the file will be autosaved before it'll be moved/renamed!",
+            ))
             .child(TextView::new(" "))
             .child(
-                LinearLayout::vertical()
-                    .child(TextView::new("To"))
-                    .child(path_input::new(
-                        &state.project_path,
-                        "to_rename_path".to_string(),
-                        false,
-                    )?)
-                    .full_width(),
+                LinearLayout::horizontal()
+                    .child(
+                        LinearLayout::vertical()
+                            .child(TextView::new("From"))
+                            .child(path_input::new(
+                                &state.project_path,
+                                "from_rename_path".to_string(),
+                                true,
+                            )?)
+                            .full_width(),
+                    )
+                    .child(TextView::new(" "))
+                    .child(
+                        LinearLayout::vertical()
+                            .child(TextView::new("To"))
+                            .child(path_input::new(
+                                &state.project_path,
+                                "to_rename_path".to_string(),
+                                false,
+                            )?)
+                            .full_width(),
+                    ),
             );
         siv.add_layer(
             Dialog::new()
@@ -327,7 +386,7 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                         })
                         .unwrap();
 
-                    if let Err(e) = save(siv, true) {
+                    if let Err(e) = save(siv, None) {
                         Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
@@ -389,7 +448,7 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
                     true,
                 )?)
                 .button("Confirm", |siv| {
-                    let state = siv
+                    let mut state = siv
                         .with_user_data(|state: &mut State| state.clone())
                         .unwrap();
                     let delete_path = siv
@@ -407,6 +466,10 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
                         Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
+
+                    state.remove_file(&delete_path);
+
+                    siv.set_user_data(state.clone());
 
                     if let Err(e) = open_paths(siv, &state.project_path, None) {
                         Into::<Error>::into(e).to_dialog(siv);
@@ -434,51 +497,47 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
 }
 
 /// Save current progress + Handling Title
-pub fn save(siv: &mut Cursive, force: bool) -> Result<()> {
-    let state = siv
+pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()> {
+    let mut state = siv
         .with_user_data(|state: &mut State| state.clone())
         .unwrap();
-    if let Some(file_path) = state.file_path {
-        let old_content = fs::read_to_string(&file_path)?;
-        let content = siv
-            .call_on_name("editor", |view: &mut TextArea| {
-                view.get_content().to_string()
-            })
-            .unwrap();
 
-        if old_content != content {
-            if !force {
-                siv.add_layer(
-                    Dialog::new()
-                        .content(TextView::new(format!(
-                            "You have unsaved changes at {:?}. Want to save them?",
-                            &file_path
-                        )))
-                        .button("Yes", move |siv| {
-                            if let Err(e) = fs::write(&file_path, content.clone()) {
-                                Into::<Error>::into(e).to_dialog(siv);
-                                return;
-                            }
+    let binding = FileData::default();
+    let content = &state.get_current_file().unwrap_or(&binding).str;
 
-                            siv.pop_layer();
-                        })
-                        .dismiss_button("No"),
-                )
-            } else {
-                fs::write(file_path.clone(), content)?;
+    let current_file = state
+        .current_file
+        .as_ref()
+        .map(|current_file| (current_file, content));
 
-                siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-                    view.set_title(file_path.to_string_lossy())
-                })
-                .unwrap();
-            }
+    let data = if let Some(other) = other {
+        Some(other)
+    } else {
+        current_file
+    };
+
+    if let Some(data) = data {
+        let old_content = fs::read_to_string(data.0)?;
+
+        if &old_content != data.1 {
+            // just write when something really changed
+            fs::write(data.0.clone(), data.1)?;
         }
+
+        siv.call_on_name("editor_title", |view: &mut EditorPanel| {
+            view.set_title(data.0.to_string_lossy())
+        })
+        .unwrap();
+
+        state.files_edited.remove(data.0);
+
+        siv.set_user_data(state);
     }
     Ok(())
 }
 
 /// Copies the line where the cursor currently is
-pub fn copy(text_area: &mut TextArea) -> Result<()> {
+pub fn copy(text_area: &mut EditArea) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -492,7 +551,7 @@ pub fn copy(text_area: &mut TextArea) -> Result<()> {
 }
 
 /// Pasts the current clipboard
-pub fn paste(text_area: &mut TextArea) -> Result<()> {
+pub fn paste(text_area: &mut EditArea) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -513,7 +572,7 @@ pub fn paste(text_area: &mut TextArea) -> Result<()> {
 }
 
 /// Cuts the line where the cursor currently is
-pub fn cut(text_area: &mut TextArea) -> Result<()> {
+pub fn cut(text_area: &mut EditArea) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -530,7 +589,7 @@ pub fn cut(text_area: &mut TextArea) -> Result<()> {
 }
 
 /// Implements the tabulator
-pub fn tabulator(text_area: &mut TextArea, ident: bool) -> Result<()> {
+pub fn tabulator(text_area: &mut EditArea, ident: bool) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -573,7 +632,7 @@ pub enum Direction {
 }
 
 /// Moves the line withing the cursor in the specified direction
-pub fn move_line(text_area: &mut TextArea, direction: Direction) -> Result<()> {
+pub fn move_line(text_area: &mut EditArea, direction: Direction) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 
@@ -619,7 +678,7 @@ pub fn move_line(text_area: &mut TextArea, direction: Direction) -> Result<()> {
 }
 
 /// Move cursor to the start or end of the current line
-pub fn move_cursor_end(text_area: &mut TextArea, direction: Direction) -> Result<()> {
+pub fn move_cursor_end(text_area: &mut EditArea, direction: Direction) -> Result<()> {
     let content = text_area.get_content().to_string();
     let cursor_pos = text_area.cursor();
 

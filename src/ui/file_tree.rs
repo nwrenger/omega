@@ -1,22 +1,24 @@
 use cursive::{
     view::{Nameable, Scrollable},
-    views::{NamedView, ScrollView, TextArea},
+    views::{NamedView, ScrollView},
     Cursive,
 };
 use cursive_tree_view::{Placement, TreeView};
 use std::{fmt, fs, io, path::PathBuf};
 
 use crate::{
-    app::{EditorPanel, State},
+    app::{EditorPanel, FileData, State},
     error::Error,
-    events::save,
 };
 
-#[derive(Debug)]
+use super::edit_area::EditArea;
+
+#[derive(Debug, Clone, Default)]
 pub struct TreeEntry {
-    name: String,
-    path: PathBuf,
-    dir: Option<PathBuf>,
+    pub name: String,
+    pub path: PathBuf,
+    pub dir: Option<PathBuf>,
+    pub row: Option<usize>,
 }
 
 impl fmt::Display for TreeEntry {
@@ -39,6 +41,7 @@ fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()
                         .unwrap_or_else(|_| "".to_string()),
                     path: entry.path(),
                     dir: Some(path),
+                    row: None,
                 });
             } else if path.is_file() {
                 entries.push(TreeEntry {
@@ -48,6 +51,7 @@ fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()
                         .unwrap_or_else(|_| "".to_string()),
                     path: entry.path(),
                     dir: None,
+                    row: None,
                 });
             }
         }
@@ -81,11 +85,11 @@ pub fn expand_tree(
             _ => unimplemented!(),
         };
 
-        for i in entries {
+        for mut i in entries {
             if i.dir.is_some() {
-                tree.insert_container_item(i, placement, parent_row);
+                i.row = tree.insert_container_item(i.clone(), placement, parent_row);
             } else {
-                tree.insert_item(i, placement, parent_row);
+                i.row = tree.insert_item(i.clone(), placement, parent_row);
             }
         }
     }
@@ -111,37 +115,54 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
         if let Some(tree) = siv.find_name::<TreeView<TreeEntry>>("tree") {
             if let Some(item) = tree.borrow_item(row) {
                 if item.dir.is_none() {
-                    let saved = save(siv, false);
-
-                    if saved.is_ok() {
-                        let state = siv
-                            .with_user_data(|state: &mut State| state.clone())
-                            .unwrap();
-
+                    let mut state = siv
+                        .with_user_data(|state: &mut State| state.clone())
+                        .unwrap();
+                    let path_clone = item.path.clone();
+                    if state.get_file(&item.path).is_none() {
                         match fs::read_to_string(&item.path) {
                             Ok(content) => {
-                                siv.call_on_name("editor", |text_area: &mut TextArea| {
-                                    text_area.set_content(content);
+                                siv.call_on_name("editor", |text_area: &mut EditArea| {
+                                    text_area.set_content(content.clone());
                                     text_area.enable();
                                 })
                                 .unwrap();
+
+                                siv.set_user_data(
+                                    state.open_new_file(path_clone, FileData { str: content }),
+                                );
                             }
                             Err(e) => {
                                 Into::<Error>::into(e).to_dialog(siv);
                                 return;
                             }
                         };
+                    } else {
+                        state = State {
+                            current_file: Some(path_clone),
+                            ..state
+                        };
 
-                        siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-                            view.set_title(item.path.to_string_lossy())
+                        siv.call_on_name("editor", |text_area: &mut EditArea| {
+                            text_area.set_content(&state.get_current_file().unwrap().str);
+                            text_area.enable();
                         })
                         .unwrap();
 
-                        siv.set_user_data(State {
-                            file_path: Some(item.path.to_path_buf()),
-                            ..state
-                        });
+                        siv.set_user_data(state.clone());
                     }
+
+                    // check if file has been added && update title accordingly
+                    let title = if state.is_current_file_edited() {
+                        format!("{} *", item.path.to_string_lossy())
+                    } else {
+                        item.path.to_string_lossy().to_string()
+                    };
+
+                    siv.call_on_name("editor_title", |view: &mut EditorPanel| {
+                        view.set_title(title)
+                    })
+                    .unwrap();
                 }
             }
         }

@@ -1,14 +1,16 @@
 use std::{
+    collections::HashMap,
     env,
     path::{Path, PathBuf},
 };
 
+use crate::ui::edit_area::EditArea;
 use cursive::{
     backends,
     event::{Event, Key},
     theme::{BaseColor, BorderStyle, Color, PaletteColor, Theme},
     view::{Nameable, Resizable, Scrollable},
-    views::{LinearLayout, NamedView, OnEventView, Panel, ResizedView, ScrollView, TextArea},
+    views::{LinearLayout, NamedView, OnEventView, Panel, ResizedView, ScrollView},
 };
 use cursive_buffered_backend::BufferedBackend;
 use cursive_tree_view::TreeView;
@@ -26,14 +28,66 @@ pub const PKG_AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 pub const PKG_DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 pub const PKG_LICENSE: &str = env!("CARGO_PKG_LICENSE");
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct State {
-    pub file_path: Option<PathBuf>,
     pub project_path: PathBuf,
+    pub current_file: Option<PathBuf>,
+    pub files: HashMap<PathBuf, FileData>,
+    pub files_edited: HashMap<PathBuf, bool>,
+}
+
+#[derive(Clone, Debug, Default)]
+
+pub struct FileData {
+    pub str: String,
+}
+
+impl State {
+    pub fn is_file_edited(&self, path: &PathBuf) -> bool {
+        self.files_edited.get(path).is_some()
+    }
+
+    pub fn is_current_file_edited(&self) -> bool {
+        self.is_file_edited(self.current_file.as_ref().unwrap_or(&PathBuf::default()))
+    }
+
+    pub fn get_file(&self, path: &PathBuf) -> Option<&FileData> {
+        self.files.get(path)
+    }
+
+    pub fn get_current_file(&self) -> Option<&FileData> {
+        self.get_file(self.current_file.as_ref().unwrap_or(&PathBuf::default()))
+    }
+
+    pub fn remove_file(&mut self, path: &PathBuf) {
+        self.files.remove(path);
+        self.files_edited.remove(path);
+        if let Some(current_file) = &self.current_file {
+            if current_file == path {
+                self.current_file = None;
+            }
+        }
+    }
+
+    pub fn open_new_project(
+        &mut self,
+        project_path: &Path,
+        current_file: Option<&PathBuf>,
+    ) -> Self {
+        self.project_path = project_path.to_path_buf();
+        self.current_file = current_file.cloned();
+        self.to_owned()
+    }
+
+    pub fn open_new_file(&mut self, current_file: PathBuf, content: FileData) -> Self {
+        self.files.insert(current_file.clone(), content);
+        self.current_file = Some(current_file);
+        self.to_owned()
+    }
 }
 
 // Helper types of the main/tree panel
-pub type EditorPanel = Panel<OnEventView<ResizedView<NamedView<ScrollView<NamedView<TextArea>>>>>>;
+pub type EditorPanel = Panel<OnEventView<ResizedView<ScrollView<NamedView<EditArea>>>>>;
 pub type TreePanel = ResizedView<Panel<ScrollView<NamedView<TreeView<TreeEntry>>>>>;
 
 /// Starts the app && event loop
@@ -83,58 +137,82 @@ pub fn start() {
     siv.add_global_callback(Event::CtrlChar('n'), |s| events::new(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('r'), |s| events::rename(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('d'), |s| events::delete(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, true).handle(s));
+    siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, None).handle(s));
 
-    let text_area = TextArea::new()
-        .disabled()
-        .with_name("editor")
-        .scrollable()
-        .with_name("editor_scroll")
-        .full_screen();
+    let mut raw_text_area = EditArea::new().disabled();
+    // detecting edits on `EditArea`, and updating global state
+    raw_text_area.set_on_edit(|siv, content, _| {
+        let mut state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap_or_default();
+        if let Some(current_file) = &state.current_file {
+            let contents = state.files.get_mut(current_file);
+            if let Some(contents) = contents {
+                contents.str = content.to_string();
+                state.files_edited.insert(current_file.to_path_buf(), true);
+
+                // update title
+                siv.call_on_name("editor_title", |editor_panel: &mut EditorPanel| {
+                    editor_panel.set_title(format!(
+                        "{} *",
+                        state
+                            .clone()
+                            .current_file
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                    ));
+                })
+                .unwrap();
+            }
+        }
+        siv.set_user_data(state);
+    });
+
+    let text_area = raw_text_area.with_name("editor").scrollable().full_screen();
 
     let events = OnEventView::new(text_area)
         .on_pre_event(Event::CtrlChar('c'), move |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::copy(&mut text_area).handle(s);
             }
         })
         .on_pre_event(Event::CtrlChar('v'), move |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::paste(&mut text_area).handle(s);
             }
         })
         .on_pre_event(Event::CtrlChar('x'), move |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::cut(&mut text_area).handle(s);
             }
         })
         .on_pre_event(Event::Shift(Key::Up), |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::move_line(&mut text_area, events::Direction::Up).handle(s);
             }
         })
         .on_pre_event(Event::Shift(Key::Down), |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::move_line(&mut text_area, events::Direction::Down).handle(s);
             }
         })
         .on_pre_event(Event::Shift(Key::Left), |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::move_cursor_end(&mut text_area, events::Direction::Left).handle(s);
             }
         })
         .on_pre_event(Event::Shift(Key::Right), |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::move_cursor_end(&mut text_area, events::Direction::Right).handle(s);
             }
         })
         .on_pre_event(Key::Tab, |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::tabulator(&mut text_area, true).handle(s);
             }
         })
         .on_pre_event(Event::Shift(Key::Tab), |s| {
-            if let Some(mut text_area) = s.find_name::<TextArea>("editor") {
+            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
                 events::tabulator(&mut text_area, false).handle(s);
             }
         });
@@ -167,9 +245,9 @@ pub fn start() {
     theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::White);
     theme.palette[PaletteColor::Tertiary] = Color::Dark(BaseColor::Black);
     theme.palette[PaletteColor::TitlePrimary] = Color::Light(BaseColor::Red);
-    theme.palette[PaletteColor::TitleSecondary] = Color::Dark(BaseColor::Yellow);
+    theme.palette[PaletteColor::TitleSecondary] = Color::Dark(BaseColor::Red);
     theme.palette[PaletteColor::Highlight] = Color::Light(BaseColor::Red);
-    theme.palette[PaletteColor::HighlightInactive] = Color::Dark(BaseColor::Yellow);
+    theme.palette[PaletteColor::HighlightInactive] = Color::Dark(BaseColor::Red);
 
     theme.borders = BorderStyle::Simple;
 

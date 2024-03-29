@@ -1,6 +1,6 @@
 [package]
 name = "omega"
-version = "0.2.2"
+version = "0.2.3"
 repository = "https://github.com/nwrenger/omega"
 documentation = "https://github.com/nwrenger/omega"
 readme = "README.md"
@@ -24,3 +24,5 @@ cursive = { version = "0.20.0", default-features = false, features = [
 ] }
 cursive_buffered_backend = "0.6.1"
 cursive_tree_view = "0.8.0"
+unicode-segmentation = "1.11.0"
+unicode-width = "0.1.11"
