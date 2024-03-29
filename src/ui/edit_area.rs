@@ -2,6 +2,7 @@
 use cursive::{
     direction::Direction,
     event::{Callback, Event, EventResult, Key, MouseButton, MouseEvent},
+    reexports::log::error,
     theme::{Effect, PaletteStyle, Style},
     utils::{
         lines::simple::{prefix, simple_prefix, LinesIterator, Row},
@@ -26,9 +27,9 @@ use unicode_width::UnicodeWidthStr;
 /// use cursive_core::traits::{Nameable, Resizable};
 /// use cursive_core::views::EditArea;
 ///
-/// let text_area = EditArea::new()
+/// let edit_area = EditArea::new()
 ///     .content("Write description here...")
-///     .with_name("text_area")
+///     .with_name("edit_area")
 ///     .fixed_width(30)
 ///     .min_height(5);
 /// ```
@@ -421,6 +422,198 @@ impl EditArea {
         self.make_edit_cb().unwrap_or_else(Callback::dummy)
     }
 
+    /// Copies the line where the cursor currently is
+    fn copy(&mut self) {
+        let content = self.get_content().to_string();
+        let cursor_pos = self.cursor();
+
+        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+
+        let lines: Vec<&str> = content.split('\n').collect();
+
+        crate::clipboard::set_content(lines[current_line].to_string() + "\n")
+            .unwrap_or_else(|e| error!("{e}"));
+    }
+
+    /// Pasts the current clipboard
+    fn paste(&mut self) -> Callback {
+        let content = self.get_content().to_string();
+        let cursor_pos = self.cursor();
+
+        let (current_line, cursor_in_line) = Self::get_cursor_line_info(&content, cursor_pos);
+
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        if let Ok(text) = crate::clipboard::get_content() {
+            let split = lines[current_line].split_at(cursor_in_line);
+            let inserted_line = split.0.to_string() + text.as_str() + split.1;
+            lines[current_line] = inserted_line.as_str();
+
+            let new_content: String = lines.join("\n");
+            self.set_content(new_content);
+
+            self.set_cursor(cursor_pos + text.to_string().len());
+
+            // changed stuff soooo, needing this
+            self.make_edit_cb().unwrap_or(Callback::dummy())
+        } else {
+            Callback::dummy()
+        }
+    }
+
+    /// Cuts the line where the cursor currently is
+    fn cut(&mut self) -> Callback {
+        let content = self.get_content().to_string();
+        let cursor_pos = self.cursor();
+
+        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        crate::clipboard::set_content(lines[current_line].to_string() + "\n")
+            .unwrap_or_else(|e| error!("{e}"));
+        lines.remove(current_line);
+
+        let new_content: String = lines.join("\n");
+        self.set_content(new_content);
+        // changed stuff soooo, needing this
+        self.make_edit_cb().unwrap_or(Callback::dummy())
+    }
+
+    /// Implements the tabulator
+    fn tabulator(&mut self, ident: bool) -> Callback {
+        let content = self.get_content().to_string();
+        let cursor_pos = self.cursor();
+
+        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+        let mut lines: Vec<&str> = content.split('\n').collect();
+        let tab_size = 4;
+
+        if ident {
+            let str_to_add = " ".repeat(tab_size);
+            let new_line = str_to_add + lines[current_line];
+
+            self.set_cursor(cursor_pos + tab_size);
+
+            lines[current_line] = &new_line;
+            let new_content: String = lines.join("\n");
+            self.set_content(new_content);
+        } else {
+            let str_to_add = " ".repeat(tab_size);
+            let new_line = lines[current_line].replacen(&str_to_add, "", 1);
+
+            if lines[current_line] != new_line {
+                self.set_cursor(cursor_pos - tab_size);
+            }
+
+            lines[current_line] = &new_line;
+            let new_content: String = lines.join("\n");
+            self.set_content(new_content);
+        };
+
+        // changed stuff soooo, needing this
+        self.make_edit_cb().unwrap_or(Callback::dummy())
+    }
+
+    /// Moves the line withing the cursor in the specified direction
+    fn move_line(&mut self, direction: Key) -> Callback {
+        let content = self.get_content().to_string();
+        let cursor_pos = self.cursor();
+
+        let (current_line, cursor_in_line) = Self::get_cursor_line_info(&content, cursor_pos);
+
+        let mut lines: Vec<&str> = content.split('\n').collect();
+
+        if (current_line == 0 && direction == Key::Up)
+            || (current_line == lines.len() - 1 && direction == Key::Down)
+        {
+            return Callback::dummy();
+        }
+
+        let line_to_move = lines.remove(current_line);
+        match direction {
+            Key::Up => lines.insert(current_line - 1, line_to_move),
+            Key::Down => lines.insert(current_line + 1, line_to_move),
+            _ => {}
+        }
+
+        let new_content: String = lines.join("\n");
+        self.set_content(new_content);
+
+        let new_cursor_pos = if direction == Key::Up && current_line > 0 {
+            lines
+                .iter()
+                .take(current_line - 1)
+                .map(|line| line.len() + 1)
+                .sum::<usize>()
+                + cursor_in_line
+        } else {
+            lines
+                .iter()
+                .take(current_line + (if direction == Key::Down { 1 } else { 0 }))
+                .map(|line| line.len() + 1)
+                .sum::<usize>()
+                + cursor_in_line
+        };
+
+        self.set_cursor(new_cursor_pos);
+
+        // changed stuff soooo, needing this
+        self.make_edit_cb().unwrap_or(Callback::dummy())
+    }
+
+    /// Move cursor to the start or end of the current line
+    fn move_cursor_end(&mut self, direction: Key) {
+        let content = self.get_content().to_string();
+        let cursor_pos = self.cursor();
+
+        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+
+        let lines: Vec<&str> = content.split('\n').collect();
+        match direction {
+            Key::Left => {
+                let new_cursor_pos = lines
+                    .iter()
+                    .take(current_line)
+                    .map(|line| line.len() + 1)
+                    .sum::<usize>();
+                self.set_cursor(new_cursor_pos);
+            }
+            Key::Right => {
+                let new_cursor_pos = if current_line < lines.len() {
+                    lines
+                        .iter()
+                        .take(current_line + 1)
+                        .map(|line| line.len() + 1)
+                        .sum::<usize>()
+                        - 1
+                } else {
+                    content.len()
+                };
+                self.set_cursor(new_cursor_pos);
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns the current line number and the cursor's position within that line
+    fn get_cursor_line_info(content: &str, cursor_pos: usize) -> (usize, usize) {
+        let lines: Vec<&str> = content.split('\n').collect();
+        let mut current_line = 0;
+        let mut cursor_in_line = 0;
+        let mut count = 0;
+
+        for (i, line) in lines.iter().enumerate() {
+            let line_len = line.len() + 1;
+            if count + line_len > cursor_pos {
+                current_line = i;
+                cursor_in_line = cursor_pos - count;
+                break;
+            }
+            count += line_len;
+        }
+
+        (current_line, cursor_in_line)
+    }
+
     fn make_edit_cb(&self) -> Option<Callback> {
         self.on_edit.clone().map(|cb| {
             // Get a new Rc on the content
@@ -645,6 +838,31 @@ impl View for EditArea {
 
                     self.cursor = row.start + simple_prefix(content, x).length;
                 }
+            }
+            Event::CtrlChar('c') => self.copy(),
+            Event::CtrlChar('v') => {
+                return EventResult::Consumed(Some(self.paste()));
+            }
+            Event::CtrlChar('x') => {
+                return EventResult::Consumed(Some(self.cut()));
+            }
+            Event::Shift(Key::Up) => {
+                return EventResult::Consumed(Some(self.move_line(Key::Up)));
+            }
+            Event::Shift(Key::Down) => {
+                return EventResult::Consumed(Some(self.move_line(Key::Down)));
+            }
+            Event::Shift(Key::Left) => {
+                self.move_cursor_end(Key::Left);
+            }
+            Event::Shift(Key::Right) => {
+                self.move_cursor_end(Key::Right);
+            }
+            Event::Key(Key::Tab) => {
+                return EventResult::Consumed(Some(self.tabulator(true)));
+            }
+            Event::Shift(Key::Tab) => {
+                return EventResult::Consumed(Some(self.tabulator(false)));
             }
             _ => return EventResult::Ignored,
         }

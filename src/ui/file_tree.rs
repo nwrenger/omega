@@ -122,9 +122,9 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                     if state.get_file(&item.path).is_none() {
                         match fs::read_to_string(&item.path) {
                             Ok(content) => {
-                                siv.call_on_name("editor", |text_area: &mut EditArea| {
-                                    text_area.set_content(content.clone());
-                                    text_area.enable();
+                                siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                                    edit_area.set_content(content.clone());
+                                    edit_area.enable();
                                 })
                                 .unwrap();
 
@@ -143,9 +143,9 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                             ..state
                         };
 
-                        siv.call_on_name("editor", |text_area: &mut EditArea| {
-                            text_area.set_content(&state.get_current_file().unwrap().str);
-                            text_area.enable();
+                        siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                            edit_area.set_content(&state.get_current_file().unwrap().str);
+                            edit_area.enable();
                         })
                         .unwrap();
 

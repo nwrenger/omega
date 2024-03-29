@@ -10,7 +10,7 @@ use cursive::{
     event::{Event, Key},
     theme::{BaseColor, BorderStyle, Color, PaletteColor, Theme},
     view::{Nameable, Resizable, Scrollable},
-    views::{LinearLayout, NamedView, OnEventView, Panel, ResizedView, ScrollView},
+    views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
 };
 use cursive_buffered_backend::BufferedBackend;
 use cursive_tree_view::TreeView;
@@ -87,7 +87,7 @@ impl State {
 }
 
 // Helper types of the main/tree panel
-pub type EditorPanel = Panel<OnEventView<ResizedView<ScrollView<NamedView<EditArea>>>>>;
+pub type EditorPanel = Panel<ResizedView<ScrollView<NamedView<EditArea>>>>;
 pub type TreePanel = ResizedView<Panel<ScrollView<NamedView<TreeView<TreeEntry>>>>>;
 
 /// Starts the app && event loop
@@ -139,9 +139,9 @@ pub fn start() {
     siv.add_global_callback(Event::CtrlChar('d'), |s| events::delete(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, None).handle(s));
 
-    let mut raw_text_area = EditArea::new().disabled();
+    let mut raw_edit_area = EditArea::new().disabled();
     // detecting edits on `EditArea`, and updating global state
-    raw_text_area.set_on_edit(|siv, content, _| {
+    raw_edit_area.set_on_edit(|siv, content, _| {
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap_or_default();
@@ -168,56 +168,9 @@ pub fn start() {
         siv.set_user_data(state);
     });
 
-    let text_area = raw_text_area.with_name("editor").scrollable().full_screen();
+    let edit_are = raw_edit_area.with_name("editor").scrollable().full_screen();
 
-    let events = OnEventView::new(text_area)
-        .on_pre_event(Event::CtrlChar('c'), move |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::copy(&mut text_area).handle(s);
-            }
-        })
-        .on_pre_event(Event::CtrlChar('v'), move |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::paste(&mut text_area).handle(s);
-            }
-        })
-        .on_pre_event(Event::CtrlChar('x'), move |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::cut(&mut text_area).handle(s);
-            }
-        })
-        .on_pre_event(Event::Shift(Key::Up), |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::move_line(&mut text_area, events::Direction::Up).handle(s);
-            }
-        })
-        .on_pre_event(Event::Shift(Key::Down), |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::move_line(&mut text_area, events::Direction::Down).handle(s);
-            }
-        })
-        .on_pre_event(Event::Shift(Key::Left), |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::move_cursor_end(&mut text_area, events::Direction::Left).handle(s);
-            }
-        })
-        .on_pre_event(Event::Shift(Key::Right), |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::move_cursor_end(&mut text_area, events::Direction::Right).handle(s);
-            }
-        })
-        .on_pre_event(Key::Tab, |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::tabulator(&mut text_area, true).handle(s);
-            }
-        })
-        .on_pre_event(Event::Shift(Key::Tab), |s| {
-            if let Some(mut text_area) = s.find_name::<EditArea>("editor") {
-                events::tabulator(&mut text_area, false).handle(s);
-            }
-        });
-
-    let editor_panel = Panel::new(events).title("").with_name("editor_title");
+    let editor_panel = Panel::new(edit_are).title("").with_name("editor_title");
     let file_tree_panel = Panel::new(file_tree::new(&project_path))
         .title("")
         .fixed_width(40)

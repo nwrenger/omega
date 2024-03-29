@@ -191,9 +191,9 @@ pub fn open_paths(
     if let Some(current_file) = current_file {
         match fs::read_to_string(current_file) {
             Ok(content) => {
-                siv.call_on_name("editor", |text_area: &mut EditArea| {
-                    text_area.set_content(content.clone());
-                    text_area.enable();
+                siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                    edit_area.set_content(content.clone());
+                    edit_area.enable();
                 })
                 .unwrap();
                 siv.call_on_name("editor_title", |view: &mut EditorPanel| {
@@ -214,10 +214,10 @@ pub fn open_paths(
             }
         };
     } else if project_path.exists() {
-        siv.call_on_name("editor", |text_area: &mut EditArea| {
-            text_area.set_content(' ');
-            text_area.set_cursor(0);
-            text_area.disable();
+        siv.call_on_name("editor", |edit_area: &mut EditArea| {
+            edit_area.set_content(' ');
+            edit_area.set_cursor(0);
+            edit_area.disable();
         })
         .unwrap();
         siv.call_on_name("editor_title", |view: &mut EditorPanel| view.set_title(""))
@@ -534,201 +534,4 @@ pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()>
         siv.set_user_data(state);
     }
     Ok(())
-}
-
-/// Copies the line where the cursor currently is
-pub fn copy(text_area: &mut EditArea) -> Result<()> {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let (current_line, _) = get_cursor_line_info(&content, cursor_pos);
-
-    let lines: Vec<&str> = content.split('\n').collect();
-
-    crate::clipboard::set_content(lines[current_line].to_string() + "\n")?;
-
-    Ok(())
-}
-
-/// Pasts the current clipboard
-pub fn paste(text_area: &mut EditArea) -> Result<()> {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let (current_line, cursor_in_line) = get_cursor_line_info(&content, cursor_pos);
-
-    let mut lines: Vec<&str> = content.split('\n').collect();
-    let text = crate::clipboard::get_content()?;
-    let split = lines[current_line].split_at(cursor_in_line);
-    let inserted_line = split.0.to_string() + text.as_str() + split.1;
-    lines[current_line] = inserted_line.as_str();
-
-    let new_content: String = lines.join("\n");
-    text_area.set_content(new_content);
-
-    text_area.set_cursor(cursor_pos + text.to_string().len());
-
-    Ok(())
-}
-
-/// Cuts the line where the cursor currently is
-pub fn cut(text_area: &mut EditArea) -> Result<()> {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let (current_line, _) = get_cursor_line_info(&content, cursor_pos);
-
-    let mut lines: Vec<&str> = content.split('\n').collect();
-    crate::clipboard::set_content(lines[current_line].to_string() + "\n")?;
-    lines.remove(current_line);
-
-    let new_content: String = lines.join("\n");
-    text_area.set_content(new_content);
-
-    Ok(())
-}
-
-/// Implements the tabulator
-pub fn tabulator(text_area: &mut EditArea, ident: bool) -> Result<()> {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let (current_line, _) = get_cursor_line_info(&content, cursor_pos);
-    let mut lines: Vec<&str> = content.split('\n').collect();
-    let tab_size = 4;
-
-    if ident {
-        let str_to_add = " ".repeat(tab_size);
-        let new_line = str_to_add + lines[current_line];
-
-        text_area.set_cursor(cursor_pos + tab_size);
-
-        lines[current_line] = &new_line;
-        let new_content: String = lines.join("\n");
-        text_area.set_content(new_content);
-    } else {
-        let str_to_add = " ".repeat(tab_size);
-        let new_line = lines[current_line].replacen(&str_to_add, "", 1);
-
-        if lines[current_line] != new_line {
-            text_area.set_cursor(cursor_pos - tab_size);
-        }
-
-        lines[current_line] = &new_line;
-        let new_content: String = lines.join("\n");
-        text_area.set_content(new_content);
-    };
-
-    Ok(())
-}
-
-/// Directions for further functions
-#[derive(PartialEq)]
-pub enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-/// Moves the line withing the cursor in the specified direction
-pub fn move_line(text_area: &mut EditArea, direction: Direction) -> Result<()> {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let (current_line, cursor_in_line) = get_cursor_line_info(&content, cursor_pos);
-
-    let mut lines: Vec<&str> = content.split('\n').collect();
-
-    if (current_line == 0 && direction == Direction::Up)
-        || (current_line == lines.len() - 1 && direction == Direction::Down)
-    {
-        return Ok(());
-    }
-
-    let line_to_move = lines.remove(current_line);
-    match direction {
-        Direction::Up => lines.insert(current_line - 1, line_to_move),
-        Direction::Down => lines.insert(current_line + 1, line_to_move),
-        _ => {}
-    }
-
-    let new_content: String = lines.join("\n");
-    text_area.set_content(new_content);
-
-    let new_cursor_pos = if direction == Direction::Up && current_line > 0 {
-        lines
-            .iter()
-            .take(current_line - 1)
-            .map(|line| line.len() + 1)
-            .sum::<usize>()
-            + cursor_in_line
-    } else {
-        lines
-            .iter()
-            .take(current_line + (if direction == Direction::Down { 1 } else { 0 }))
-            .map(|line| line.len() + 1)
-            .sum::<usize>()
-            + cursor_in_line
-    };
-
-    text_area.set_cursor(new_cursor_pos);
-
-    Ok(())
-}
-
-/// Move cursor to the start or end of the current line
-pub fn move_cursor_end(text_area: &mut EditArea, direction: Direction) -> Result<()> {
-    let content = text_area.get_content().to_string();
-    let cursor_pos = text_area.cursor();
-
-    let (current_line, _) = get_cursor_line_info(&content, cursor_pos);
-
-    let lines: Vec<&str> = content.split('\n').collect();
-    match direction {
-        Direction::Left => {
-            let new_cursor_pos = lines
-                .iter()
-                .take(current_line)
-                .map(|line| line.len() + 1)
-                .sum::<usize>();
-            text_area.set_cursor(new_cursor_pos);
-        }
-        Direction::Right => {
-            let new_cursor_pos = if current_line < lines.len() {
-                lines
-                    .iter()
-                    .take(current_line + 1)
-                    .map(|line| line.len() + 1)
-                    .sum::<usize>()
-                    - 1
-            } else {
-                content.len()
-            };
-            text_area.set_cursor(new_cursor_pos);
-        }
-        _ => {}
-    }
-
-    Ok(())
-}
-
-/// Returns the current line number and the cursor's position within that line
-fn get_cursor_line_info(content: &str, cursor_pos: usize) -> (usize, usize) {
-    let lines: Vec<&str> = content.split('\n').collect();
-    let mut current_line = 0;
-    let mut cursor_in_line = 0;
-    let mut count = 0;
-
-    for (i, line) in lines.iter().enumerate() {
-        let line_len = line.len() + 1;
-        if count + line_len > cursor_pos {
-            current_line = i;
-            cursor_in_line = cursor_pos - count;
-            break;
-        }
-        count += line_len;
-    }
-
-    (current_line, cursor_in_line)
 }
