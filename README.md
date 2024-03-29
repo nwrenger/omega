@@ -16,7 +16,7 @@ That will open the editor. If the `path` is a file, the directory around it will
 
 On the left side is a panel with the project directory where you can easily traverse your project.
 
-Each time you click on one of the entries in the left side panel the current file will be closed and the new selected file will be opened. Here will the Editor check if the current state has this file already loaded and get that data or load the data from the file (from the filesystem) and save that in the state. Changes will be saved temporary in the state (via a Hashmap). Therefore you will always be able to open unsaved files again, edit them further and save them (as long as the editor wasn't quitted!). On quit (`Ctrl` + `q`) the editor detects files which hasn't been saved and will prompt you if you want to save these changes. On force quitting this check won't be done!
+Each time you click on one of the entries in the left side panel the current file will be closed and the new selected file will be opened. Here will the Editor check if the current state has this file already loaded and get that data or load the data from the file (from the filesystem) and save that in the state. Changes will be cached temporary in the state (via a Hashmap). Therefore you will always be able to open unsaved files again, edit them further and save them (as long as the editor wasn't quitted!). On quit (`Ctrl` + `q`) the editor detects files which hasn't been saved and will prompt you if you want to save these changes. On force quitting this check won't be done!
 
 Opened files which are edited will be indicated in the Title via a `*`. If you safe them the `*` will disappear.
 
