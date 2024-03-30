@@ -12,15 +12,15 @@ A performant and extensive terminal-based project editor with a wide variety of 
 ```bash
 omega [path]
 ```
-That will open the editor. If the `path` is a file, the directory around it will be the project directory. Otherwise the `path` directly will be project directory.
+This section will guide you through the initial steps of opening the editor. When specifying a `path`, if it points to a file, the editor will set the surrounding directory as the project directory. If the `path` points directly to a directory, that directory will become the project directory.
 
-On the left side is a panel with the project directory where you can easily traverse your project.
+Within the editor, you'll find a panel on the left side that displays your project's directory structure, allowing for easy navigation through your project files.
 
-Each time you click on one of the entries in the left side panel the current file will be closed and the new selected file will be opened. Here will the Editor check if the current state has this file already loaded and get that data or load the data from the file (from the filesystem) and save that in the state. Changes will be cached temporary in the state (via a Hashmap). Therefore you will always be able to open unsaved files again, edit them further and save them (as long as the editor wasn't quitted!). On quit (`Ctrl` + `q`) the editor detects files which hasn't been saved and will prompt you if you want to save these changes. On force quitting this check won't be done!
+Navigating through your project is straightforward: selecting an entry from the left panel will close the currently open file and open the newly selected one. The editor efficiently manages your files by checking if a file is already open and retrieving its data from its current state or loading it from the filesystem to store in the state. All changes to files are temporarily cached in the state using a Hashmap, ensuring that unsaved files can be reopened, edited further, and eventually saved, provided the editor remains open. Upon exiting the editor (using `Ctrl` + `q`), it will prompt you to save any unsaved changes. It is important to note that this prompt will not appear if you force quit the editor.
 
-Opened files which are edited will be indicated in the Title via a `*`. If you safe them the `*` will disappear.
+Files that are being edited will be marked with an asterisk `*` in the title bar; saving these files will remove the asterisk.
 
-Using the Global Keybindings you can add, edit, delete Files and Directories. Be careful with deleting, the files are getting directly deleted with no trash bin or something in between!
+The editor also offers Global Keybindings for file and directory management tasks, such as adding, editing, and deleting. Please exercise caution when deleting files, as this action is irreversible, with no intermediate trash bin for recovery.
 
 ## Bindings
 
