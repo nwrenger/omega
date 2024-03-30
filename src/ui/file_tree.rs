@@ -105,7 +105,12 @@ pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf) {
     for item in items {
         if let Some(row) = item.row {
             tree.set_collapsed(row, !item.opened);
-            if let Some(dir) = tree.borrow_item(row).unwrap().dir.clone() {
+            if let Some(dir) = tree
+                .borrow_item(row)
+                .unwrap_or(&TreeEntry::default())
+                .dir
+                .clone()
+            {
                 expand_tree(tree, row, &dir, Placement::LastChild);
             }
             if let Some(new_item) = tree.borrow_item_mut(row) {
@@ -126,8 +131,16 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
         siv.call_on_name("tree", move |tree: &mut TreeView<TreeEntry>| {
             // Lazily insert directory listings for sub nodes if there weren't already opened
             if !is_collapsed && children == 0 {
-                if let Some(dir) = tree.borrow_item(row).unwrap().dir.clone() {
-                    let opened = tree.borrow_item(row).unwrap().opened;
+                if let Some(dir) = tree
+                    .borrow_item(row)
+                    .unwrap_or(&TreeEntry::default())
+                    .dir
+                    .clone()
+                {
+                    let opened = tree
+                        .borrow_item(row)
+                        .unwrap_or(&TreeEntry::default())
+                        .opened;
                     if !opened {
                         expand_tree(tree, row, &dir, Placement::LastChild);
                     }
