@@ -236,7 +236,7 @@ pub fn open_paths(
             .unwrap_or_default();
 
         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-            load_parent(tree, project_path, true);
+            load_parent(tree, project_path);
         });
 
         siv.set_user_data(state.open_new_project(project_path, current_file));
@@ -289,7 +289,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
                         }
 
                         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                            load_parent(tree, &state.project_path, true);
+                            load_parent(tree, &state.project_path);
                         });
 
                         siv.pop_layer();
@@ -312,7 +312,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
                         }
 
                         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                            load_parent(tree, &state.project_path, true);
+                            load_parent(tree, &state.project_path);
                         });
 
                         siv.pop_layer();

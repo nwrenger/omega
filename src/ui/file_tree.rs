@@ -18,8 +18,6 @@ pub struct TreeEntry {
     pub name: String,
     pub path: PathBuf,
     pub dir: Option<PathBuf>,
-    pub row: Option<usize>,
-    pub opened: bool,
 }
 
 impl fmt::Display for TreeEntry {
@@ -42,8 +40,6 @@ fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()
                         .unwrap_or_else(|_| "".to_string()),
                     path: entry.path(),
                     dir: Some(path),
-                    row: None,
-                    opened: false,
                 });
             } else if path.is_file() {
                 entries.push(TreeEntry {
@@ -53,8 +49,6 @@ fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()
                         .unwrap_or_else(|_| "".to_string()),
                     path: entry.path(),
                     dir: None,
-                    row: None,
-                    opened: false,
                 });
             }
         }
@@ -98,36 +92,15 @@ pub fn expand_tree(
     }
 }
 
-pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf, same_dir: bool) {
-    let items = tree.take_items();
+pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf) {
+    tree.clear();
     expand_tree(tree, 0, dir, Placement::Before);
-    // Check if things were opened and if so load the content and give through the current state of the tree to the newly generated tree
-    for item in items {
-        if let Some(row) = item.row {
-            tree.set_collapsed(row, !item.opened);
-            if let Some(dir) = tree
-                .borrow_item(row)
-                .unwrap_or(&TreeEntry::default())
-                .dir
-                .clone()
-            {
-                expand_tree(tree, row, &dir, Placement::LastChild);
-            }
-
-            if same_dir {
-                if let Some(new_item) = tree.borrow_item_mut(row) {
-                    new_item.opened = item.opened;
-                    new_item.row = item.row;
-                }
-            }
-        }
-    }
 }
 
 pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
     let mut tree = TreeView::<TreeEntry>::new();
 
-    load_parent(&mut tree, parent, false);
+    load_parent(&mut tree, parent);
 
     // Stuff that should happen when interacted with a collapse
     tree.set_on_collapse(|siv: &mut Cursive, row, is_collapsed, children| {
@@ -140,19 +113,8 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                     .dir
                     .clone()
                 {
-                    let opened = tree
-                        .borrow_item(row)
-                        .unwrap_or(&TreeEntry::default())
-                        .opened;
-                    if !opened {
-                        expand_tree(tree, row, &dir, Placement::LastChild);
-                    }
+                    expand_tree(tree, row, &dir, Placement::LastChild);
                 }
-            }
-            // Saving state in tree item
-            if let Some(item) = tree.borrow_item_mut(row) {
-                item.row = Some(row);
-                item.opened = !is_collapsed;
             }
         });
     });
