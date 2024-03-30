@@ -157,14 +157,15 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
                         .unwrap();
 
                     let mut current_file = None;
-                    let mut project_path = PathBuf::from("/");
-
-                    if inc_path.is_file() {
+                    let project_path = if inc_path.is_file() {
                         current_file = Some(inc_path.clone());
-                        project_path = PathBuf::from(inc_path.parent().unwrap_or(Path::new("/")));
+                        PathBuf::from(inc_path.parent().unwrap_or(Path::new("/")))
                     } else if inc_path.is_dir() {
-                        project_path = inc_path;
-                    }
+                        inc_path
+                    } else {
+                        Error::FileOpen("Path doesn't exists".to_string()).to_dialog(siv);
+                        return;
+                    };
 
                     if let Err(e) = open_paths(siv, &project_path, current_file.as_ref()) {
                         Into::<Error>::into(e).to_dialog(siv);
@@ -371,7 +372,7 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                 .padding_lrtb(1, 1, 1, 0)
                 .content(layout)
                 .button("Confirm", |siv| {
-                    let state = siv
+                    let mut state = siv
                         .with_user_data(|state: &mut State| state.clone())
                         .unwrap();
                     let from = siv
@@ -385,11 +386,6 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                             PathBuf::from(view.get_content().to_string())
                         })
                         .unwrap();
-
-                    if let Err(e) = save(siv, None) {
-                        Into::<Error>::into(e).to_dialog(siv);
-                        return;
-                    }
 
                     if !to.exists() {
                         if let Err(e) = fs::rename(&from, &to) {
@@ -405,18 +401,13 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                         return;
                     }
 
-                    if let Err(e) = open_paths(siv, &state.project_path, None) {
-                        Into::<Error>::into(e).to_dialog(siv);
-                        return;
-                    }
+                    state.update_paths_after_rename(&from, &to);
+                    siv.set_user_data(state.clone());
 
-                    if from != to && state.project_path == from {
-                        siv.pop_layer();
-                        Into::<Error>::into(io::Error::new(
-                            ErrorKind::NotFound,
-                            "Couldn't find project. It got moved",
-                        ))
-                        .to_dialog(siv);
+                    if let Err(e) =
+                        open_paths(siv, &state.project_path, state.current_file.as_ref())
+                    {
+                        Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
 

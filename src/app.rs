@@ -84,6 +84,34 @@ impl State {
         self.current_file = Some(current_file);
         self.to_owned()
     }
+
+    pub fn update_paths_after_rename(&mut self, old_parent: &Path, new_parent: &Path) {
+        let adjust_path = |path: &PathBuf| -> PathBuf {
+            if let Ok(relative) = path.strip_prefix(old_parent) {
+                new_parent.join(relative)
+            } else {
+                path.clone()
+            }
+        };
+
+        self.files = self
+            .files
+            .drain()
+            .map(|(path, data)| (adjust_path(&path), data))
+            .collect();
+
+        self.files_edited = self
+            .files_edited
+            .drain()
+            .map(|(path, edited)| (adjust_path(&path), edited))
+            .collect();
+
+        if let Some(current_file) = &self.current_file {
+            self.current_file = Some(adjust_path(current_file));
+        }
+
+        self.project_path = adjust_path(&self.project_path);
+    }
 }
 
 // Helper types of the main/tree panel
@@ -112,7 +140,8 @@ pub fn start() {
         } else if inc_path.is_dir() {
             project_path = inc_path;
         } else {
-            panic!("An invalid/not existing directory/file was specified!");
+            println!("An invalid/not existing directory/file was specified!");
+            std::process::exit(1);
         }
     }
 
