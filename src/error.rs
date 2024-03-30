@@ -33,9 +33,9 @@ impl From<std::convert::Infallible> for Error {
     }
 }
 
-impl From<clippers::Error> for Error {
-    fn from(e: clippers::Error) -> Self {
-        error!("clippers::Error: {e}");
+impl From<arboard::Error> for Error {
+    fn from(e: arboard::Error) -> Self {
+        error!("arboard::Error: {e}");
         Self::Clipboard(e.to_string())
     }
 }

@@ -19,7 +19,7 @@ codegen-units = 1
 strip = true
 
 [dependencies]
-clippers = "0.1.2"
+arboard = "3.3.2"
 cursive = { version = "0.20.0", default-features = false, features = [
     "crossterm-backend",
 ] }

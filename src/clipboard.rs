@@ -1,23 +1,17 @@
-use clippers::{Clipboard, ClipperData};
+use arboard::Clipboard;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// Gets the clipboard content (text)
 pub fn get_content() -> Result<String> {
-    let mut clipboard = Clipboard::get();
+    let mut clipboard = Clipboard::new()?;
 
-    if let Some(ClipperData::Text(text)) = clipboard.read() {
-        Ok(text.to_string())
-    } else {
-        Err(Error::Clipboard(
-            "Pasted in Something which isn't Text, f.e. a picture".to_string(),
-        ))
-    }
+    Ok(clipboard.get_text()?)
 }
 
 /// Sets the clipboard content
 pub fn set_content(content: String) -> Result<()> {
-    let mut clipboard = Clipboard::get();
+    let mut clipboard = Clipboard::new()?;
 
-    Ok(clipboard.write_text(content)?)
+    Ok(clipboard.set_text(content)?)
 }
