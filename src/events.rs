@@ -9,7 +9,7 @@ use cursive::{
     views::{Dialog, EditView, LinearLayout, ListView, TextView},
     Cursive,
 };
-use cursive_tree_view::{Placement, TreeView};
+use cursive_tree_view::TreeView;
 
 use crate::{
     app::{
@@ -19,7 +19,7 @@ use crate::{
     error::{Error, Result, ResultExt},
     ui::{
         edit_area::EditArea,
-        file_tree::{expand_tree, TreeEntry},
+        file_tree::{load_parent, TreeEntry},
         path_input,
     },
 };
@@ -232,8 +232,7 @@ pub fn open_paths(
         .unwrap();
 
         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-            tree.clear();
-            expand_tree(tree, 0, project_path, Placement::Before)
+            load_parent(tree, project_path);
         });
 
         let mut state = siv
@@ -290,8 +289,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
                         }
 
                         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                            tree.clear();
-                            expand_tree(tree, 0, &state.project_path, Placement::Before)
+                            load_parent(tree, &state.project_path);
                         });
 
                         siv.pop_layer();
@@ -314,8 +312,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
                         }
 
                         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                            tree.clear();
-                            expand_tree(tree, 0, &state.project_path, Placement::Before)
+                            load_parent(tree, &state.project_path);
                         });
 
                         siv.pop_layer();
