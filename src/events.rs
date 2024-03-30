@@ -231,13 +231,13 @@ pub fn open_paths(
         })
         .unwrap();
 
-        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-            load_parent(tree, project_path);
-        });
-
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap_or_default();
+
+        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+            load_parent(tree, project_path, true);
+        });
 
         siv.set_user_data(state.open_new_project(project_path, current_file));
     } else {
@@ -289,7 +289,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
                         }
 
                         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                            load_parent(tree, &state.project_path);
+                            load_parent(tree, &state.project_path, true);
                         });
 
                         siv.pop_layer();
@@ -312,7 +312,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
                         }
 
                         siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-                            load_parent(tree, &state.project_path);
+                            load_parent(tree, &state.project_path, true);
                         });
 
                         siv.pop_layer();

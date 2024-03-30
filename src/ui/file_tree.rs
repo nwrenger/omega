@@ -98,7 +98,7 @@ pub fn expand_tree(
     }
 }
 
-pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf) {
+pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf, same_dir: bool) {
     let items = tree.take_items();
     expand_tree(tree, 0, dir, Placement::Before);
     // Check if things were opened and if so load the content and give through the current state of the tree to the newly generated tree
@@ -113,9 +113,12 @@ pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf) {
             {
                 expand_tree(tree, row, &dir, Placement::LastChild);
             }
-            if let Some(new_item) = tree.borrow_item_mut(row) {
-                new_item.opened = item.opened;
-                new_item.row = item.row;
+
+            if same_dir {
+                if let Some(new_item) = tree.borrow_item_mut(row) {
+                    new_item.opened = item.opened;
+                    new_item.row = item.row;
+                }
             }
         }
     }
@@ -124,7 +127,7 @@ pub fn load_parent(tree: &mut TreeView<TreeEntry>, dir: &PathBuf) {
 pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
     let mut tree = TreeView::<TreeEntry>::new();
 
-    load_parent(&mut tree, parent);
+    load_parent(&mut tree, parent, false);
 
     // Stuff that should happen when interacted with a collapse
     tree.set_on_collapse(|siv: &mut Cursive, row, is_collapsed, children| {
