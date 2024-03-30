@@ -449,12 +449,14 @@ impl EditArea {
             lines[current_line] = inserted_line.as_str();
 
             let new_content: String = lines.join("\n");
-            self.set_content(new_content);
-
-            self.set_cursor(cursor_pos + text.to_string().len());
-
-            // changed stuff soooo, needing this
-            self.make_edit_cb().unwrap_or(Callback::dummy())
+            if new_content != content {
+                self.set_content(new_content);
+                self.set_cursor(cursor_pos + text.to_string().len());
+                // changed stuff soooo, needing this
+                self.make_edit_cb().unwrap_or(Callback::dummy())
+            } else {
+                Callback::dummy()
+            }
         } else {
             Callback::dummy()
         }
@@ -473,9 +475,13 @@ impl EditArea {
         lines.remove(current_line);
 
         let new_content: String = lines.join("\n");
-        self.set_content(new_content);
-        // changed stuff soooo, needing this
-        self.make_edit_cb().unwrap_or(Callback::dummy())
+        if new_content != content {
+            self.set_content(new_content);
+            // changed stuff soooo, needing this
+            self.make_edit_cb().unwrap_or(Callback::dummy())
+        } else {
+            Callback::dummy()
+        }
     }
 
     /// Implements the tabulator
@@ -483,34 +489,37 @@ impl EditArea {
         let content = self.get_content().to_string();
         let cursor_pos = self.cursor();
 
-        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+        let (current_line, current_line_position) =
+            Self::get_cursor_line_info(&content, cursor_pos);
         let mut lines: Vec<&str> = content.split('\n').collect();
         let tab_size = 4;
 
-        if ident {
-            let str_to_add = " ".repeat(tab_size);
+        let str_to_add = " ".repeat(tab_size);
+
+        let new_content = if ident {
             let new_line = str_to_add + lines[current_line];
 
             self.set_cursor(cursor_pos + tab_size);
 
             lines[current_line] = &new_line;
-            let new_content: String = lines.join("\n");
-            self.set_content(new_content);
+            lines.join("\n")
         } else {
-            let str_to_add = " ".repeat(tab_size);
             let new_line = lines[current_line].replacen(&str_to_add, "", 1);
 
             if lines[current_line] != new_line {
-                self.set_cursor(cursor_pos - tab_size);
+                self.set_cursor(cursor_pos - min(current_line_position, tab_size));
             }
 
             lines[current_line] = &new_line;
-            let new_content: String = lines.join("\n");
-            self.set_content(new_content);
+            lines.join("\n")
         };
-
-        // changed stuff soooo, needing this
-        self.make_edit_cb().unwrap_or(Callback::dummy())
+        if new_content != content {
+            self.set_content(new_content);
+            // changed stuff soooo, needing this
+            self.make_edit_cb().unwrap_or(Callback::dummy())
+        } else {
+            Callback::dummy()
+        }
     }
 
     /// Moves the line withing the cursor in the specified direction
@@ -535,9 +544,6 @@ impl EditArea {
             _ => {}
         }
 
-        let new_content: String = lines.join("\n");
-        self.set_content(new_content);
-
         let new_cursor_pos = if direction == Key::Up && current_line > 0 {
             lines
                 .iter()
@@ -556,8 +562,14 @@ impl EditArea {
 
         self.set_cursor(new_cursor_pos);
 
-        // changed stuff soooo, needing this
-        self.make_edit_cb().unwrap_or(Callback::dummy())
+        let new_content: String = lines.join("\n");
+        if new_content != content {
+            self.set_content(new_content);
+            // changed stuff soooo, needing this
+            self.make_edit_cb().unwrap_or(Callback::dummy())
+        } else {
+            Callback::dummy()
+        }
     }
 
     /// Move cursor to the start or end of the current line
