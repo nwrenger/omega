@@ -1,6 +1,6 @@
 [package]
 name = "omega"
-version = "0.2.7"
+version = "0.2.8"
 repository = "https://github.com/nwrenger/omega"
 documentation = "https://github.com/nwrenger/omega"
 readme = "README.md"
