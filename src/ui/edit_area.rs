@@ -796,8 +796,7 @@ impl View for EditArea {
                 offset,
             } if position
                 .checked_sub(offset)
-                .map(|position| self.scrollbase.start_drag(position, self.last_size.x))
-                .unwrap_or(false) =>
+                .map_or(false, |position| self.scrollbase.start_drag(position, self.last_size.x)) =>
             {
                 fix_scroll = false;
             }
