@@ -198,7 +198,7 @@ pub fn open_paths(
                 })
                 .unwrap();
                 siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-                    view.set_title(current_file.to_string_lossy())
+                    view.set_title(current_file.to_string_lossy());
                 })
                 .unwrap();
 
@@ -207,7 +207,7 @@ pub fn open_paths(
                     .unwrap_or_default();
 
                 siv.set_user_data(
-                    state.open_new_file(current_file.to_path_buf(), FileData { str: content }),
+                    state.open_new_file(current_file.clone(), FileData { str: content }),
                 );
             }
             Err(e) => {
@@ -227,7 +227,7 @@ pub fn open_paths(
     if project_path.exists() {
         siv.call_on_name("tree_title", |view: &mut TreePanel| {
             view.get_inner_mut()
-                .set_title(project_path.to_string_lossy())
+                .set_title(project_path.to_string_lossy());
         })
         .unwrap();
 
@@ -513,7 +513,7 @@ pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()>
         }
 
         siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-            view.set_title(data.0.to_string_lossy())
+            view.set_title(data.0.to_string_lossy());
         })
         .unwrap();
 

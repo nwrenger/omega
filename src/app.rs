@@ -178,7 +178,7 @@ pub fn start() {
             let contents = state.files.get_mut(current_file);
             if let Some(contents) = contents {
                 contents.str = content.to_string();
-                state.files_edited.insert(current_file.to_path_buf(), true);
+                state.files_edited.insert(current_file.clone(), true);
 
                 // update title
                 siv.call_on_name("editor_title", |editor_panel: &mut EditorPanel| {

@@ -37,7 +37,7 @@ fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()
                     name: entry
                         .file_name()
                         .into_string()
-                        .unwrap_or_else(|_| "".to_string()),
+                        .unwrap_or_else(|_| String::new()),
                     path: entry.path(),
                     dir: Some(path),
                 });
@@ -46,7 +46,7 @@ fn collect_entries(dir: &PathBuf, entries: &mut Vec<TreeEntry>) -> io::Result<()
                     name: entry
                         .file_name()
                         .into_string()
-                        .unwrap_or_else(|_| "".to_string()),
+                        .unwrap_or_else(|_| String::new()),
                     path: entry.path(),
                     dir: None,
                 });
@@ -168,7 +168,7 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                     };
 
                     siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-                        view.set_title(title)
+                        view.set_title(title);
                     })
                     .unwrap();
                 }
