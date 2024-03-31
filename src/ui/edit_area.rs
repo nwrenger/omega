@@ -467,7 +467,7 @@ impl EditArea {
         let content = self.get_content().to_string();
         let cursor_pos = self.cursor();
 
-        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+        let (current_line, current_line_pos) = Self::get_cursor_line_info(&content, cursor_pos);
 
         let mut lines: Vec<&str> = content.split('\n').collect();
         crate::clipboard::set_content(lines[current_line].to_string() + "\n")
@@ -476,6 +476,7 @@ impl EditArea {
 
         let new_content: String = lines.join("\n");
         if new_content != content {
+            self.set_cursor(cursor_pos - current_line_pos);
             self.set_content(new_content);
             // changed stuff soooo, needing this
             self.make_edit_cb().unwrap_or(Callback::dummy())
