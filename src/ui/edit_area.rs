@@ -781,14 +781,14 @@ impl View for EditArea {
                 ..
             } if self.scrollbase.can_scroll_up() => {
                 fix_scroll = false;
-                self.scrollbase.scroll_up(5);
+                self.scrollbase.scroll_up(3);
             }
             Event::Mouse {
                 event: MouseEvent::WheelDown,
                 ..
             } if self.scrollbase.can_scroll_down() => {
                 fix_scroll = false;
-                self.scrollbase.scroll_down(5);
+                self.scrollbase.scroll_down(3);
             }
             Event::Mouse {
                 event: MouseEvent::Press(MouseButton::Left),
