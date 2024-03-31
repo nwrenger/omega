@@ -197,9 +197,9 @@ pub fn start() {
         siv.set_user_data(state);
     });
 
-    let edit_are = raw_edit_area.with_name("editor").scrollable().full_screen();
+    let edit_area = raw_edit_area.with_name("editor").scrollable().full_screen();
 
-    let editor_panel = Panel::new(edit_are).title("").with_name("editor_title");
+    let editor_panel = Panel::new(edit_area).title("").with_name("editor_title");
     let file_tree_panel = Panel::new(file_tree::new(&project_path))
         .title("")
         .fixed_width(40)
