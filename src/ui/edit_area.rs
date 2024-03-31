@@ -794,9 +794,9 @@ impl View for EditArea {
                 event: MouseEvent::Press(MouseButton::Left),
                 position,
                 offset,
-            } if position
-                .checked_sub(offset)
-                .map_or(false, |position| self.scrollbase.start_drag(position, self.last_size.x)) =>
+            } if position.checked_sub(offset).map_or(false, |position| {
+                self.scrollbase.start_drag(position, self.last_size.x)
+            }) =>
             {
                 fix_scroll = false;
             }
