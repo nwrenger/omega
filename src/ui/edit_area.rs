@@ -721,6 +721,10 @@ impl View for EditArea {
 
     fn draw(&self, printer: &Printer) {
         printer.with_style(PaletteStyle::Secondary, |printer| {
+            if self.last_size.x < 5 {
+                return;
+            }
+
             let syntax_set = SyntaxSet::load_defaults_newlines();
             
             let theme = &ThemeSet::load_defaults().themes["Solarized (dark)"];
