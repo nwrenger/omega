@@ -1,3 +1,4 @@
+use cursive::theme::{BaseColor, ColorStyle};
 #[allow(deprecated)]
 use cursive::{
     direction::Direction,
@@ -11,6 +12,7 @@ use cursive::{
     view::{CannotFocus, ScrollBase, SizeCache},
     Cursive, Printer, Rect, Vec2, View, With, XY,
 };
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use std::{cmp::min, rc::Rc};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -67,6 +69,9 @@ pub struct EditArea {
 
     /// Byte offset of the currently selected grapheme.
     cursor: usize,
+
+    /// File Extension for syntax highliting
+    file_extension: String,
 }
 
 fn make_rows(text: &str, width: usize) -> Vec<Row> {
@@ -94,6 +99,7 @@ impl EditArea {
             size_cache: None,
             last_size: Vec2::zero(),
             cursor: 0,
+            file_extension: "txt".to_string(),
         }
         .with(|area| area.compute_rows(Vec2::new(1, 1)))
         // Make sure we have valid rows, even for empty text.
@@ -702,6 +708,10 @@ impl EditArea {
         self.fix_ghost_row();
         self.scrollbase.set_heights(size.y, self.rows.len());
     }
+
+    pub fn set_file_extension(&mut self, file_ex: String) {
+        self.file_extension = file_ex;
+    }
 }
 
 impl View for EditArea {
@@ -711,30 +721,52 @@ impl View for EditArea {
 
     fn draw(&self, printer: &Printer) {
         printer.with_style(PaletteStyle::Secondary, |printer| {
-            let effect = Effect::Simple;
+            let syntax_set = SyntaxSet::load_defaults_newlines();
+            
+            let theme = &ThemeSet::load_defaults().themes["Solarized (dark)"];
+
+            let synref = syntax_set.find_syntax_by_token(&self.file_extension);
+            
+            let syntax;
+            if let Some(synref) = synref {
+                syntax = synref;
+            }
+            else {
+                syntax = syntax_set.find_syntax_by_token("txt").unwrap();
+            }
+
+            let mut highlighter = syntect::easy::HighlightLines::new(syntax, &theme);
+
+            let styled = cursive_syntect::parse(&self.content, &mut highlighter, &syntax_set).unwrap();
+
 
             self.scrollbase.draw(printer, |printer, i| {
-                let row = &self.rows[i];
-                let text = &self.content[row.start..row.end];
-                printer.with_effect(effect, |printer| {
-                    printer.print((0, 0), text);
-                });
+                let span_rows: Vec<_> = cursive::utils::lines::spans::LinesIterator::new(&styled, styled.width()).collect();
+                let row = &span_rows[i];
+                
+                let mut x = 0;
+                for span in row.resolve(&styled) {
+                    printer.with_style(ColorStyle::new(span.attr.color.front,cursive::theme::Color::Dark(BaseColor::Black)), |printer| {
+                        printer.print((x, 0), span.content);
+                        x += span.content.width();
+                    });
+                }
 
                 if printer.focused && i == self.selected_row() && printer.enabled && self.enabled {
-                    let cursor_offset = self.cursor - row.start;
+                    let cursor_offset = self.cursor - self.rows[i].start;
                     let mut c = StyledString::new();
-                    if cursor_offset == text.len() {
+                    if &cursor_offset == &self.content[self.rows[i].start..self.rows[i].end].len() {
                         c.append_styled("_", Style::secondary());
                     } else {
-                        let grapheme = text[cursor_offset..]
+                        let grapheme = &self.content[self.rows[i].start..self.rows[i].end][cursor_offset..]
                             .graphemes(true)
                             .next()
                             .expect("Found no char!");
 
-                        c.append_styled(grapheme, Style::secondary().combine(Effect::Reverse));
+                        c.append_styled(grapheme.to_string(), Style::secondary().combine(Effect::Reverse));
                     }
-                    let offset = text[..cursor_offset].width();
-                    printer.print_styled((offset, 0), &c);
+                    let offset = &self.content[self.rows[i].start..self.rows[i].end][..cursor_offset].width();
+                    printer.print_styled((offset.to_owned(), 0), &c);
                 }
             });
         });

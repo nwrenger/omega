@@ -193,6 +193,11 @@ pub fn start() {
                 })
                 .unwrap();
             }
+
+            siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                edit_area.set_file_extension(current_file.extension().unwrap().to_os_string().into_string().unwrap())
+            })
+            .unwrap();
         }
         siv.set_user_data(state);
     });

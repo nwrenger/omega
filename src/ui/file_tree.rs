@@ -132,6 +132,7 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                             Ok(content) => {
                                 siv.call_on_name("editor", |edit_area: &mut EditArea| {
                                     edit_area.set_content(content.clone());
+                                    edit_area.set_file_extension(item.name.clone().rsplit_once('.').unwrap().1.to_string());
                                     edit_area.enable();
                                 })
                                 .unwrap();
