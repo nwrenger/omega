@@ -741,7 +741,7 @@ impl View for EditArea {
 
 
             self.scrollbase.draw(printer, |printer, i| {
-                let span_rows: Vec<_> = cursive::utils::lines::spans::LinesIterator::new(&styled, styled.width()).collect();
+                let span_rows: Vec<_> = cursive::utils::lines::spans::LinesIterator::new(&styled, self.last_size.x).collect();
                 let row = &span_rows[i];
                 
                 let mut x = 0;
