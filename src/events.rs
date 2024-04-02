@@ -190,9 +190,14 @@ pub fn open_paths(
     current_file: Option<&PathBuf>,
 ) -> Result<()> {
     if let Some(current_file) = current_file {
+        let extension = current_file
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy();
         match fs::read_to_string(current_file) {
             Ok(content) => {
                 siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                    edit_area.set_highlighting(&extension);
                     edit_area.set_content(content.clone());
                     edit_area.enable();
                 })

@@ -127,10 +127,12 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                         .with_user_data(|state: &mut State| state.clone())
                         .unwrap();
                     let path_clone = item.path.clone();
+                    let extension = item.path.extension().unwrap_or_default().to_string_lossy();
                     if state.get_file(&item.path).is_none() {
                         match fs::read_to_string(&item.path) {
                             Ok(content) => {
                                 siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                                    edit_area.set_highlighting(&extension);
                                     edit_area.set_content(content.clone());
                                     edit_area.enable();
                                 })
@@ -152,6 +154,7 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                         };
 
                         siv.call_on_name("editor", |edit_area: &mut EditArea| {
+                            edit_area.set_highlighting(&extension);
                             edit_area.set_content(&state.get_current_file().unwrap().str);
                             edit_area.enable();
                         })

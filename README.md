@@ -50,9 +50,15 @@ The editor also offers Global Keybindings for file and directory management task
 
 ## Installation
 
-You can currently install `omega` using cargo:
+To install `omega`, you can use Cargo by running the following command in your terminal:
+
 ```bash
 cargo install omega
 ```
-Or download the binary directly from the [releases page](https://github.com/nwrenger/omega/releases/latest).
-On linux based systems you'll need the `libx11-dev`/`libX11-devel` packages to be installed.
+Alternatively, you can download the binary directly from the [releases page](https://github.com/nwrenger/omega/releases/latest).
+
+### Additional Requirements
+
+For Linux-based systems, it is necessary to have the `libx11-dev` (Debian/Ubuntu) or `libX11-devel` (Fedora/RHEL) packages installed.
+
+It's important to note that on Unix-based systems, `omega` relies on `ncurses` as its backend, which will need to be installed. For Windows users, `omega` uses `crossterm` as its backend.

@@ -8,7 +8,6 @@ use crate::ui::edit_area::EditArea;
 use cursive::{
     backends,
     event::{Event, Key},
-    theme::{BaseColor, BorderStyle, Color, PaletteColor, Theme},
     view::{Nameable, Resizable, Scrollable},
     views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
 };
@@ -197,6 +196,41 @@ pub fn start() {
         siv.set_user_data(state);
     });
 
+    siv.with_theme(|t| {
+        t.shadow = false;
+        if let Some(background) = raw_edit_area
+            .theme
+            .settings
+            .background
+            .map(cursive_syntect::translate_color)
+        {
+            t.palette[cursive::theme::PaletteColor::Background] = background;
+            t.palette[cursive::theme::PaletteColor::View] = background;
+        }
+        if let Some(foreground) = raw_edit_area
+            .theme
+            .settings
+            .foreground
+            .map(cursive_syntect::translate_color)
+        {
+            t.palette[cursive::theme::PaletteColor::Primary] = foreground;
+            t.palette[cursive::theme::PaletteColor::Secondary] = foreground;
+            t.palette[cursive::theme::PaletteColor::Tertiary] = foreground;
+            t.palette[cursive::theme::PaletteColor::TitlePrimary] = foreground;
+            t.palette[cursive::theme::PaletteColor::TitleSecondary] = foreground;
+        }
+
+        if let Some(highlight) = raw_edit_area
+            .theme
+            .settings
+            .highlight
+            .map(cursive_syntect::translate_color)
+        {
+            t.palette[cursive::theme::PaletteColor::Highlight] = highlight;
+            t.palette[cursive::theme::PaletteColor::HighlightText] = highlight;
+        }
+    });
+
     let edit_area = raw_edit_area.with_name("editor").scrollable().full_screen();
 
     let editor_panel = Panel::new(edit_area).title("").with_name("editor_title");
@@ -214,33 +248,21 @@ pub fn start() {
     // set initial data
     open_paths(&mut siv, &project_path, file_path.as_ref()).unwrap();
 
-    // custom theme
-    let mut theme = Theme {
-        shadow: false,
-        ..Default::default()
-    };
-
-    theme.palette[PaletteColor::Background] = Color::Dark(BaseColor::Black);
-    theme.palette[PaletteColor::View] = Color::Dark(BaseColor::Black);
-    theme.palette[PaletteColor::Primary] = Color::Dark(BaseColor::White);
-    theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::Blue);
-    theme.palette[PaletteColor::Secondary] = Color::Dark(BaseColor::White);
-    theme.palette[PaletteColor::Tertiary] = Color::Dark(BaseColor::Black);
-    theme.palette[PaletteColor::TitlePrimary] = Color::Light(BaseColor::Red);
-    theme.palette[PaletteColor::TitleSecondary] = Color::Dark(BaseColor::Red);
-    theme.palette[PaletteColor::Highlight] = Color::Light(BaseColor::Red);
-    theme.palette[PaletteColor::HighlightInactive] = Color::Dark(BaseColor::Red);
-
-    theme.borders = BorderStyle::Simple;
-
-    siv.set_theme(theme);
-
     // start event loop
     siv.run_with(|| backend());
 }
 
 fn backend() -> Box<BufferedBackend> {
-    let crossterm_backend = backends::crossterm::Backend::init().unwrap();
-    let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
-    Box::new(buffered_backend)
+    #[cfg(unix)]
+    {
+        let crossterm_backend = backends::curses::n::Backend::init().unwrap();
+        let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
+        Box::new(buffered_backend)
+    }
+    #[cfg(windows)]
+    {
+        let crossterm_backend = backends::crossterm::Backend::init().unwrap();
+        let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
+        Box::new(buffered_backend)
+    }
 }

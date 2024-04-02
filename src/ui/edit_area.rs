@@ -3,7 +3,7 @@ use cursive::{
     direction::Direction,
     event::{Callback, Event, EventResult, Key, MouseButton, MouseEvent},
     reexports::log::error,
-    theme::{Effect, PaletteStyle, Style},
+    theme::{ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
     utils::{
         lines::simple::{prefix, simple_prefix, LinesIterator, Row},
         markup::StyledString,
@@ -12,6 +12,10 @@ use cursive::{
     Cursive, Printer, Rect, Vec2, View, With, XY,
 };
 use std::{cmp::min, rc::Rc};
+use syntect::{
+    highlighting::{Theme, ThemeSet},
+    parsing::{SyntaxReference, SyntaxSet},
+};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -48,6 +52,15 @@ pub struct EditArea {
     ///
     /// Invariant: never empty.
     rows: Vec<Row>,
+
+    /// Syntax Set
+    syntax: SyntaxSet,
+
+    /// Current Theme for highlighting
+    pub theme: Theme,
+
+    /// Specified through file extension, the applied highlighting
+    synref: SyntaxReference,
 
     /// When `false`, we don't take any input.
     enabled: bool,
@@ -88,6 +101,11 @@ impl EditArea {
         EditArea {
             content: String::new(),
             rows: Vec::new(),
+            syntax: SyntaxSet::load_defaults_newlines(),
+            theme: ThemeSet::load_defaults().themes["base16-eighties.dark"].clone(),
+            synref: SyntaxSet::load_defaults_newlines()
+                .find_syntax_plain_text()
+                .clone(),
             enabled: true,
             on_edit: None,
             scrollbase: ScrollBase::new().right_padding(0),
@@ -157,6 +175,15 @@ impl EditArea {
     pub fn content<S: Into<String>>(mut self, content: S) -> Self {
         self.set_content(content);
         self
+    }
+
+    /// Set highlighting style via a file extension
+    pub fn set_highlighting(&mut self, extension: &str) {
+        self.synref = self
+            .syntax
+            .find_syntax_by_extension(extension)
+            .cloned()
+            .unwrap_or(self.syntax.find_syntax_plain_text().clone());
     }
 
     /// Disables this view.
@@ -710,28 +737,39 @@ impl View for EditArea {
     }
 
     fn draw(&self, printer: &Printer) {
-        printer.with_style(PaletteStyle::Secondary, |printer| {
-            let effect = Effect::Simple;
-
+        printer.with_style(PaletteStyle::Primary, |printer| {
             self.scrollbase.draw(printer, |printer, i| {
                 let row = &self.rows[i];
-                let text = &self.content[row.start..row.end];
-                printer.with_effect(effect, |printer| {
-                    printer.print((0, 0), text);
-                });
+                let text = self.content[row.start..row.end].to_string();
+
+                let mut highlighter = syntect::easy::HighlightLines::new(&self.synref, &self.theme);
+
+                let styled = cursive_syntect::parse(&text, &mut highlighter, &self.syntax)
+                    .unwrap_or_default();
+
+                let mut x = 0;
+                for span in styled.spans() {
+                    printer.with_style(
+                        ColorStyle::new(span.attr.color.front, PaletteColor::Background),
+                        |printer| {
+                            printer.print((x, 0), span.content);
+                            x += span.content.width();
+                        },
+                    );
+                }
 
                 if printer.focused && i == self.selected_row() && printer.enabled && self.enabled {
                     let cursor_offset = self.cursor - row.start;
                     let mut c = StyledString::new();
                     if cursor_offset == text.len() {
-                        c.append_styled("_", Style::secondary());
+                        c.append_styled("_", Style::primary());
                     } else {
                         let grapheme = text[cursor_offset..]
                             .graphemes(true)
                             .next()
                             .expect("Found no char!");
 
-                        c.append_styled(grapheme, Style::secondary().combine(Effect::Reverse));
+                        c.append_styled(grapheme, Style::primary().combine(Effect::Reverse));
                     }
                     let offset = text[..cursor_offset].width();
                     printer.print_styled((offset, 0), &c);
