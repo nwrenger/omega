@@ -255,8 +255,8 @@ pub fn start() {
 fn backend() -> Box<BufferedBackend> {
     #[cfg(unix)]
     {
-        let crossterm_backend = backends::curses::n::Backend::init().unwrap();
-        let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
+        let ncurses_backend = backends::curses::n::Backend::init().unwrap();
+        let buffered_backend = cursive_buffered_backend::BufferedBackend::new(ncurses_backend);
         Box::new(buffered_backend)
     }
     #[cfg(windows)]
