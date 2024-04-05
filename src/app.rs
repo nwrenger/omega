@@ -8,7 +8,7 @@ use crate::ui::edit_area::EditArea;
 use cursive::{
     backends,
     event::{Event, Key},
-    view::{Nameable, Resizable, Scrollable},
+    view::{Nameable, Resizable},
     views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
 };
 use cursive_buffered_backend::BufferedBackend;
@@ -114,7 +114,7 @@ impl State {
 }
 
 // Helper types of the main/tree panel
-pub type EditorPanel = Panel<ResizedView<ScrollView<NamedView<EditArea>>>>;
+pub type EditorPanel = Panel<ResizedView<NamedView<EditArea>>>;
 pub type TreePanel = ResizedView<Panel<ScrollView<NamedView<TreeView<TreeEntry>>>>>;
 
 /// Starts the app && event loop
@@ -231,7 +231,7 @@ pub fn start() {
         }
     });
 
-    let edit_area = raw_edit_area.with_name("editor").scrollable().full_screen();
+    let edit_area = raw_edit_area.with_name("editor").full_screen();
 
     let editor_panel = Panel::new(edit_area).title("").with_name("editor_title");
     let file_tree_panel = Panel::new(file_tree::new(&project_path))

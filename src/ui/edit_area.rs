@@ -1,15 +1,18 @@
-#[allow(deprecated)]
 use cursive::{
     direction::Direction,
-    event::{Callback, Event, EventResult, Key, MouseButton, MouseEvent},
+    event::{Callback, Event, EventResult, Key, MouseEvent},
     reexports::log::error,
     theme::{ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
     utils::{
-        lines::simple::{prefix, simple_prefix, LinesIterator, Row},
+        lines::simple::{simple_prefix, LinesIterator, Row},
         markup::StyledString,
     },
-    view::{CannotFocus, ScrollBase, SizeCache},
+    view::{CannotFocus, SizeCache},
     Cursive, Printer, Rect, Vec2, View, With, XY,
+};
+use cursive::{
+    impl_scroller,
+    view::{scroll, ScrollStrategy},
 };
 use std::{cmp::min, rc::Rc};
 use syntect::{
@@ -71,8 +74,7 @@ pub struct EditArea {
     on_edit: Option<Rc<OnEdit>>,
 
     /// Base for scrolling features
-    #[allow(deprecated)]
-    scrollbase: ScrollBase,
+    scroll_core: scroll::Core,
 
     /// Cache to avoid re-computing layout on no-op events
     size_cache: Option<XY<SizeCache>>,
@@ -82,9 +84,11 @@ pub struct EditArea {
     cursor: usize,
 }
 
-fn make_rows(text: &str, width: usize) -> Vec<Row> {
-    // We can't make rows with width=0, so force at least width=1.
-    let width = usize::max(width, 1);
+impl_scroller!(EditArea::scroll_core);
+
+fn make_rows(text: &str) -> Vec<Row> {
+    // Full width, no limits
+    let width = usize::MAX;
     LinesIterator::new(text, width).show_spaces().collect()
 }
 
@@ -108,13 +112,21 @@ impl EditArea {
                 .clone(),
             enabled: true,
             on_edit: None,
-            scrollbase: ScrollBase::new().right_padding(0),
-            size_cache: None,
+            scroll_core: scroll::Core::new(),
             last_size: Vec2::zero(),
+            size_cache: None,
             cursor: 0,
         }
-        .with(|area| area.compute_rows(Vec2::new(1, 1)))
-        // Make sure we have valid rows, even for empty text.
+        .with(|area| {
+            // Make sure we have valid rows, even for empty text.
+            area.compute_rows(Vec2::new(1, 1));
+            // Enable scrolling in x direction
+            area.scroll_core.set_scroll_x(true);
+            area.scroll_core
+                .set_scroll_strategy(ScrollStrategy::KeepRow);
+            // Fix for scrollbar at bottom to be intractable and content better readable
+            area.scroll_core.set_scrollbar_padding((1, 1));
+        })
     }
 
     /// Retrieves the content of the view.
@@ -143,8 +155,7 @@ impl EditArea {
     pub fn set_cursor(&mut self, cursor: usize) {
         self.cursor = cursor;
 
-        let focus = self.selected_row();
-        self.scrollbase.scroll_to(focus);
+        self.fix_scroll();
     }
 
     /// Sets the content of the view.
@@ -271,12 +282,16 @@ impl EditArea {
         for _ in 0..5 {
             self.move_up();
         }
+
+        self.fix_scroll();
     }
 
     fn page_down(&mut self) {
         for _ in 0..5 {
             self.move_down();
         }
+
+        self.fix_scroll();
     }
 
     fn move_up(&mut self) {
@@ -285,13 +300,10 @@ impl EditArea {
             return;
         }
 
-        // Number of cells to the left of the cursor
-        let x = self.col_at(self.cursor);
-
         let prev_row = self.rows[row_id - 1];
-        let prev_text = &self.content[prev_row.start..prev_row.end];
-        let offset = prefix(prev_text.graphemes(true), x, "").length;
-        self.cursor = prev_row.start + offset;
+        self.cursor = prev_row.start;
+
+        self.fix_scroll();
     }
 
     fn move_down(&mut self) {
@@ -299,42 +311,25 @@ impl EditArea {
         if row_id + 1 == self.rows.len() {
             return;
         }
-        let x = self.col_at(self.cursor);
 
         let next_row = self.rows[row_id + 1];
-        let next_text = &self.content[next_row.start..next_row.end];
-        let offset = prefix(next_text.graphemes(true), x, "").length;
-        self.cursor = next_row.start + offset;
+        self.cursor = next_row.start;
+
+        self.fix_scroll();
     }
 
     /// Moves the cursor to the left.
-    ///
-    /// Wraps the previous line if required.
     fn move_left(&mut self) {
-        let len = {
-            // We don't want to utf8-parse the entire content.
-            // So only consider the last row.
-            let mut row = self.selected_row();
-            if self.rows[row].start == self.cursor {
-                row = row.saturating_sub(1);
-            }
+        self.cursor -= 1;
 
-            let text = &self.content[self.rows[row].start..self.cursor];
-            text.graphemes(true).last().unwrap().len()
-        };
-        self.cursor -= len;
+        self.fix_scroll();
     }
 
     /// Moves the cursor to the right.
-    ///
-    /// Jumps to the next line is required.
     fn move_right(&mut self) {
-        let len = self.content[self.cursor..]
-            .graphemes(true)
-            .next()
-            .unwrap()
-            .len();
-        self.cursor += len;
+        self.cursor += 1;
+
+        self.fix_scroll();
     }
 
     fn is_cache_valid(&self, size: Vec2) -> bool {
@@ -361,31 +356,17 @@ impl EditArea {
         }
     }
 
-    fn soft_compute_rows(&mut self, size: Vec2) {
+    fn compute_rows(&mut self, size: Vec2) {
         if self.is_cache_valid(size) {
             return;
         }
 
-        let mut available = size.x;
-
-        self.rows = make_rows(&self.content, available);
+        self.rows = make_rows(&self.content);
         self.fix_ghost_row();
-
-        if self.rows.len() > size.y {
-            available = available.saturating_sub(1);
-            // Apparently we'll need a scrollbar. Doh :(
-            self.rows = make_rows(&self.content, available);
-            self.fix_ghost_row();
-        }
 
         if !self.rows.is_empty() {
             self.size_cache = Some(SizeCache::build(size, size));
         }
-    }
-
-    fn compute_rows(&mut self, size: Vec2) {
-        self.soft_compute_rows(size);
-        self.scrollbase.set_heights(size.y, self.rows.len());
     }
 
     fn backspace(&mut self) -> Callback {
@@ -422,7 +403,6 @@ impl EditArea {
         }
 
         self.fix_damages();
-
         self.make_edit_cb().unwrap_or_else(Callback::dummy)
     }
 
@@ -445,7 +425,6 @@ impl EditArea {
 
         // Finally, rows may not have the correct width anymore, so fix them.
         self.fix_damages();
-
         self.make_edit_cb().unwrap_or_else(Callback::dummy)
     }
 
@@ -666,6 +645,12 @@ impl EditArea {
         })
     }
 
+    /// Fix scrolling
+    fn fix_scroll(&mut self) {
+        self.scroll_core
+            .scroll_to((self.selected_col(), self.selected_row()).into());
+    }
+
     /// Fix a damage located at the cursor.
     ///
     /// The only damages are assumed to have occured around the cursor.
@@ -699,17 +684,9 @@ impl EditArea {
         let last_row = last_byte.map_or(self.rows.len(), |last_byte| self.row_at(last_byte));
         let last_byte = last_byte.unwrap_or(self.content.len());
 
-        // Do we have access to the entire width?...
-        let mut available = size.x;
-
         let scrollable = self.rows.len() > size.y;
-        if scrollable {
-            // ... not if a scrollbar is there
-            available = available.saturating_sub(1);
-        }
-
         // First attempt, if scrollbase status didn't change.
-        let new_rows = make_rows(&self.content[first_byte..last_byte], available);
+        let new_rows = make_rows(&self.content[first_byte..last_byte]);
         // How much did this add?
         let new_row_count = self.rows.len() + new_rows.len() + first_row - last_row;
         if !scrollable && new_row_count > size.y {
@@ -726,69 +703,23 @@ impl EditArea {
         let affected_rows = first_row..last_row;
         let replacement_rows = new_rows.into_iter().map(|row| row.shifted(first_byte));
         self.rows.splice(affected_rows, replacement_rows);
+        // other fixes
         self.fix_ghost_row();
-        self.scrollbase.set_heights(size.y, self.rows.len());
-    }
-}
-
-impl View for EditArea {
-    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
-        constraint
+        self.fix_scroll();
     }
 
-    fn draw(&self, printer: &Printer) {
-        printer.with_style(PaletteStyle::Primary, |printer| {
-            self.scrollbase.draw(printer, |printer, i| {
-                let row = &self.rows[i];
-                let text = self.content[row.start..row.end].to_string();
-
-                let mut highlighter = syntect::easy::HighlightLines::new(&self.synref, &self.theme);
-
-                let styled = cursive_syntect::parse(&text, &mut highlighter, &self.syntax)
-                    .unwrap_or_default();
-
-                let mut x = 0;
-                for span in styled.spans() {
-                    printer.with_style(
-                        ColorStyle::new(span.attr.color.front, PaletteColor::Background),
-                        |printer| {
-                            printer.print((x, 0), span.content);
-                            x += span.content.width();
-                        },
-                    );
-                }
-
-                if printer.focused && i == self.selected_row() && printer.enabled && self.enabled {
-                    let cursor_offset = self.cursor - row.start;
-                    let mut c = StyledString::new();
-                    if cursor_offset == text.len() {
-                        c.append_styled("_", Style::primary());
-                    } else {
-                        let grapheme = text[cursor_offset..]
-                            .graphemes(true)
-                            .next()
-                            .expect("Found no char!");
-
-                        c.append_styled(grapheme, Style::primary().combine(Effect::Reverse));
-                    }
-                    let offset = text[..cursor_offset].width();
-                    printer.print_styled((offset, 0), &c);
-                }
-            });
-        });
-    }
-
-    fn on_event(&mut self, event: Event) -> EventResult {
+    // Events inside the text field
+    fn inner_on_event(&mut self, event: Event) -> EventResult {
         if !self.enabled {
             return EventResult::Ignored;
         }
 
-        let mut fix_scroll = true;
         match event {
             Event::Char(ch) => {
                 return EventResult::Consumed(Some(self.insert(ch)));
             }
             Event::Key(Key::Enter) => {
+                self.fix_scroll();
                 return EventResult::Consumed(Some(self.insert('\n')));
             }
             Event::Key(Key::Backspace) if self.cursor > 0 => {
@@ -804,10 +735,20 @@ impl View for EditArea {
                 if row + 1 < self.rows.len() && self.cursor == self.rows[row + 1].start {
                     self.move_left();
                 }
+                self.fix_scroll();
             }
-            Event::Ctrl(Key::Home) => self.cursor = 0,
-            Event::Ctrl(Key::End) => self.cursor = self.content.len(),
-            Event::Key(Key::Home) => self.cursor = self.rows[self.selected_row()].start,
+            Event::Ctrl(Key::Home) => {
+                self.cursor = 0;
+                self.fix_scroll();
+            }
+            Event::Ctrl(Key::End) => {
+                self.cursor = self.content.len();
+                self.fix_scroll();
+            }
+            Event::Key(Key::Home) => {
+                self.cursor = self.rows[self.selected_row()].start;
+                self.fix_scroll();
+            }
             Event::Key(Key::Up) if self.selected_row() > 0 => self.move_up(),
             Event::Key(Key::Down) if self.selected_row() + 1 < self.rows.len() => self.move_down(),
             Event::Key(Key::PageUp) => self.page_up(),
@@ -815,52 +756,21 @@ impl View for EditArea {
             Event::Key(Key::Left) if self.cursor > 0 => self.move_left(),
             Event::Key(Key::Right) if self.cursor < self.content.len() => self.move_right(),
             Event::Mouse {
-                event: MouseEvent::WheelUp,
-                ..
-            } if self.scrollbase.can_scroll_up() => {
-                fix_scroll = false;
-                self.scrollbase.scroll_up(3);
-            }
-            Event::Mouse {
-                event: MouseEvent::WheelDown,
-                ..
-            } if self.scrollbase.can_scroll_down() => {
-                fix_scroll = false;
-                self.scrollbase.scroll_down(3);
-            }
-            Event::Mouse {
-                event: MouseEvent::Press(MouseButton::Left),
-                position,
-                offset,
-            } if position.checked_sub(offset).map_or(false, |position| {
-                self.scrollbase.start_drag(position, self.last_size.x)
-            }) =>
-            {
-                fix_scroll = false;
-            }
-            Event::Mouse {
-                event: MouseEvent::Hold(MouseButton::Left),
-                position,
-                offset,
-            } => {
-                fix_scroll = false;
-                let position = position.saturating_sub(offset);
-                self.scrollbase.drag(position);
-            }
-            Event::Mouse {
                 event: MouseEvent::Press(_),
                 position,
                 offset,
-            } if !self.rows.is_empty() && position.fits_in_rect(offset, self.last_size) => {
-                if let Some(position) = position.checked_sub(offset) {
-                    #[allow(deprecated)]
-                    let y = position.y + self.scrollbase.start_line;
-                    let y = min(y, self.rows.len() - 1);
-                    let x = position.x;
-                    let row = &self.rows[y];
-                    let content = &self.content[row.start..row.end];
-
-                    self.cursor = row.start + simple_prefix(content, x).length;
+            } => {
+                if !self.rows.is_empty()
+                    && position.fits_in_rect(offset, self.scroll_core.inner_size())
+                {
+                    if let Some(position) = position.checked_sub(offset) {
+                        let y = position.y;
+                        let y = min(y, self.rows.len() - 1);
+                        let x = position.x;
+                        let row = &self.rows[y];
+                        let content = &self.content[row.start..row.end];
+                        self.cursor = row.start + simple_prefix(content, x).length;
+                    }
                 }
             }
             Event::CtrlChar('c') => self.copy(),
@@ -891,24 +801,26 @@ impl View for EditArea {
             _ => return EventResult::Ignored,
         }
 
-        if fix_scroll {
-            let focus = self.selected_row();
-            self.scrollbase.scroll_to(focus);
-        }
-
-        EventResult::Consumed(None)
+        EventResult::consumed()
     }
 
-    fn take_focus(&mut self, _: Direction) -> Result<EventResult, CannotFocus> {
-        self.enabled.then(EventResult::consumed).ok_or(CannotFocus)
+    /// Compute the required size for the content.
+    fn inner_required_size(&mut self, req: Vec2) -> Vec2 {
+        // Make sure our structure is up to date
+        self.compute_rows(req);
+
+        // Ideally, we'd want x = the longest row + 1
+        // (we always keep a space at the end)
+        // And y = number of rows
+        // debug!("{:?}", self.rows);
+        let scroll_width = if self.rows.len() > req.y { 1 } else { 0 };
+
+        let content_width = self.rows.iter().map(|r| r.width).max().unwrap_or(1);
+
+        Vec2::new(scroll_width + 1 + content_width, self.rows.len())
     }
 
-    fn layout(&mut self, size: Vec2) {
-        self.last_size = size;
-        self.compute_rows(size);
-    }
-
-    fn important_area(&self, _: Vec2) -> Rect {
+    fn inner_important_area(&self, _: Vec2) -> Rect {
         // The important area is a single character
         let char_width = if self.cursor >= self.content.len() {
             // If we're are the end of the content, it'll be a space
@@ -922,6 +834,83 @@ impl View for EditArea {
                 .width()
         };
 
-        Rect::from_size((self.selected_col(), self.selected_row()), (char_width, 1))
+        Rect::from_size(
+            Vec2::new(self.selected_col(), self.selected_row()),
+            (char_width, 1),
+        )
+    }
+}
+
+impl View for EditArea {
+    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
+        constraint
+    }
+
+    fn draw(&self, printer: &Printer) {
+        printer.with_style(PaletteStyle::Primary, |printer| {
+            scroll::draw_lines(self, printer, |edit_area, printer, i| {
+                let row = &edit_area.rows[i];
+                let text = edit_area.content[row.start..row.end].to_string();
+
+                let mut highlighter =
+                    syntect::easy::HighlightLines::new(&edit_area.synref, &edit_area.theme);
+
+                let styled = cursive_syntect::parse(&text, &mut highlighter, &edit_area.syntax)
+                    .unwrap_or_default();
+
+                let mut x = 0;
+                for span in styled.spans() {
+                    printer.with_style(
+                        ColorStyle::new(span.attr.color.front, PaletteColor::Background),
+                        |printer| {
+                            printer.print((x, 0), span.content);
+                            x += span.content.width();
+                        },
+                    );
+                }
+
+                if printer.focused
+                    && i == edit_area.selected_row()
+                    && printer.enabled
+                    && edit_area.enabled
+                {
+                    let cursor_offset = edit_area.cursor - row.start;
+                    let mut c = StyledString::new();
+                    let selected_char = if cursor_offset == text.len() {
+                        " "
+                    } else {
+                        text[cursor_offset..]
+                            .graphemes(true)
+                            .next()
+                            .expect("Found no char!")
+                    };
+                    c.append_styled(selected_char, Style::primary().combine(Effect::Reverse));
+                    let offset = text[..cursor_offset].width();
+                    printer.print_styled((offset, 0), &c);
+                }
+            });
+        });
+    }
+
+    fn on_event(&mut self, event: Event) -> EventResult {
+        scroll::on_event(
+            self,
+            event,
+            Self::inner_on_event,
+            Self::inner_important_area,
+        )
+    }
+
+    fn take_focus(&mut self, _: Direction) -> Result<EventResult, CannotFocus> {
+        self.enabled.then(EventResult::consumed).ok_or(CannotFocus)
+    }
+
+    fn layout(&mut self, size: Vec2) {
+        self.last_size = size;
+        scroll::layout(self, size, true, |_s, _size| (), Self::inner_required_size);
+    }
+
+    fn important_area(&self, size: Vec2) -> Rect {
+        scroll::important_area(self, size, Self::inner_important_area)
     }
 }

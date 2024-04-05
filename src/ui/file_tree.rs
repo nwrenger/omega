@@ -139,7 +139,10 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
                                 .unwrap();
 
                                 siv.set_user_data(
-                                    state.open_new_file(path_clone, FileData { str: content }),
+                                    state.open_new_file(
+                                        path_clone.clone(),
+                                        FileData { str: content },
+                                    ),
                                 );
                             }
                             Err(e) => {
