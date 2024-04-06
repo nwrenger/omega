@@ -73,14 +73,18 @@ impl State {
         project_path: &Path,
         current_file: Option<&PathBuf>,
     ) -> Self {
-        self.project_path = project_path.to_path_buf();
-        self.current_file = current_file.cloned();
+        self.project_path = project_path.canonicalize().unwrap_or_default();
+        let canonicalized_current_file =
+            current_file.map(|current_file| current_file.canonicalize().unwrap_or_default());
+        self.current_file = canonicalized_current_file;
         self.to_owned()
     }
 
     pub fn open_new_file(&mut self, current_file: PathBuf, content: FileData) -> Self {
-        self.files.insert(current_file.clone(), content);
-        self.current_file = Some(current_file);
+        let canonicalized_current_file = current_file.canonicalize().unwrap_or_default();
+        self.files
+            .insert(canonicalized_current_file.clone(), content);
+        self.current_file = Some(canonicalized_current_file);
         self.to_owned()
     }
 
@@ -150,7 +154,7 @@ pub fn start() {
     siv.clear_global_callbacks(Key::Esc);
     siv.clear_global_callbacks(Event::CtrlChar('p'));
     siv.clear_global_callbacks(Event::CtrlChar('q'));
-    siv.clear_global_callbacks(Event::CtrlChar('f'));
+    siv.clear_global_callbacks(Event::CtrlChar('g'));
     siv.clear_global_callbacks(Event::CtrlChar('o'));
     siv.clear_global_callbacks(Event::CtrlChar('n'));
     siv.clear_global_callbacks(Event::CtrlChar('r'));
@@ -160,7 +164,7 @@ pub fn start() {
     siv.add_global_callback(Key::Esc, |s| events::info(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('p'), |s| s.toggle_debug_console());
     siv.add_global_callback(Event::CtrlChar('q'), |s| events::quit(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('f'), |s| s.quit());
+    siv.add_global_callback(Event::CtrlChar('g'), |s| events::goto(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('o'), |s| events::open(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('n'), |s| events::new(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('r'), |s| events::rename(s).handle(s));
@@ -186,6 +190,8 @@ pub fn start() {
                         state
                             .clone()
                             .current_file
+                            .unwrap_or_default()
+                            .file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
                     ));

@@ -17,7 +17,7 @@ pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
     let view_name = name.clone() + "_edit";
     let select_name = name.clone() + "_select";
 
-    let mut select = SelectView::<String>::new();
+    let mut select = SelectView::new();
 
     let view_name_clone = view_name.clone();
     let select_name_clone = select_name.clone();

@@ -6,12 +6,9 @@ use cursive::{
 use cursive_tree_view::{Placement, TreeView};
 use std::{fmt, fs, io, path::PathBuf};
 
-use crate::{
-    app::{EditorPanel, FileData, State},
-    error::Error,
-};
+use crate::error::ResultExt;
 
-use super::edit_area::EditArea;
+use super::open_file;
 
 #[derive(Debug, Clone, Default)]
 pub struct TreeEntry {
@@ -123,60 +120,7 @@ pub fn new(parent: &PathBuf) -> ScrollView<NamedView<TreeView<TreeEntry>>> {
         if let Some(tree) = siv.find_name::<TreeView<TreeEntry>>("tree") {
             if let Some(item) = tree.borrow_item(row) {
                 if item.dir.is_none() {
-                    let mut state = siv
-                        .with_user_data(|state: &mut State| state.clone())
-                        .unwrap();
-                    let path_clone = item.path.clone();
-                    let extension = item.path.extension().unwrap_or_default().to_string_lossy();
-                    if state.get_file(&item.path).is_none() {
-                        match fs::read_to_string(&item.path) {
-                            Ok(content) => {
-                                siv.call_on_name("editor", |edit_area: &mut EditArea| {
-                                    edit_area.set_highlighting(&extension);
-                                    edit_area.set_content(content.clone());
-                                    edit_area.enable();
-                                })
-                                .unwrap();
-
-                                siv.set_user_data(
-                                    state.open_new_file(
-                                        path_clone.clone(),
-                                        FileData { str: content },
-                                    ),
-                                );
-                            }
-                            Err(e) => {
-                                Into::<Error>::into(e).to_dialog(siv);
-                                return;
-                            }
-                        };
-                    } else {
-                        state = State {
-                            current_file: Some(path_clone),
-                            ..state
-                        };
-
-                        siv.call_on_name("editor", |edit_area: &mut EditArea| {
-                            edit_area.set_highlighting(&extension);
-                            edit_area.set_content(&state.get_current_file().unwrap().str);
-                            edit_area.enable();
-                        })
-                        .unwrap();
-
-                        siv.set_user_data(state.clone());
-                    }
-
-                    // check if file has been added && update title accordingly
-                    let title = if state.is_current_file_edited() {
-                        format!("{} *", item.path.to_string_lossy())
-                    } else {
-                        item.path.to_string_lossy().to_string()
-                    };
-
-                    siv.call_on_name("editor_title", |view: &mut EditorPanel| {
-                        view.set_title(title);
-                    })
-                    .unwrap();
+                    open_file(siv, &item.path).handle(siv);
                 }
             }
         }
