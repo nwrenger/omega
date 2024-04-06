@@ -51,6 +51,9 @@ pub struct EditArea {
     // TODO: use a smarter data structure (rope?)
     content: String,
 
+    /// Width of the longest line
+    max_content_width: usize,
+
     /// Byte offsets within `content` representing text rows
     ///
     /// Invariant: never empty.
@@ -104,6 +107,7 @@ impl EditArea {
         #[allow(deprecated)]
         EditArea {
             content: String::new(),
+            max_content_width: 0,
             rows: Vec::new(),
             syntax: SyntaxSet::load_defaults_newlines(),
             theme: ThemeSet::load_defaults().themes["base16-eighties.dark"].clone(),
@@ -356,6 +360,10 @@ impl EditArea {
         }
     }
 
+    fn compute_max_content_length(&mut self) {
+        self.max_content_width = self.rows.iter().map(|r| r.width).max().unwrap_or(1);
+    }
+
     fn compute_rows(&mut self, size: Vec2) {
         if self.is_cache_valid(size) {
             return;
@@ -363,6 +371,9 @@ impl EditArea {
 
         self.rows = make_rows(&self.content);
         self.fix_ghost_row();
+
+        // also compute here the max content length
+        self.compute_max_content_length();
 
         if !self.rows.is_empty() {
             self.size_cache = Some(SizeCache::build(size, size));
@@ -706,6 +717,8 @@ impl EditArea {
         // other fixes
         self.fix_ghost_row();
         self.fix_scroll();
+        // also compute the max length, that could have changed
+        self.compute_max_content_length();
     }
 
     // Events inside the text field
@@ -805,19 +818,8 @@ impl EditArea {
     }
 
     /// Compute the required size for the content.
-    fn inner_required_size(&mut self, req: Vec2) -> Vec2 {
-        // Make sure our structure is up to date
-        self.compute_rows(req);
-
-        // Ideally, we'd want x = the longest row + 1
-        // (we always keep a space at the end)
-        // And y = number of rows
-        // debug!("{:?}", self.rows);
-        let scroll_width = if self.rows.len() > req.y { 1 } else { 0 };
-
-        let content_width = self.rows.iter().map(|r| r.width).max().unwrap_or(1);
-
-        Vec2::new(scroll_width + 1 + content_width, self.rows.len())
+    fn inner_required_size(&mut self, _: Vec2) -> Vec2 {
+        Vec2::new(self.max_content_width + 1, self.rows.len())
     }
 
     fn inner_important_area(&self, _: Vec2) -> Rect {
