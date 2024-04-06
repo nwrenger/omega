@@ -4,7 +4,7 @@ pub mod path_input;
 
 // Here are some general functions of updating the ui
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::Path};
 
 use cursive::Cursive;
 
@@ -16,7 +16,7 @@ use crate::{
 use self::edit_area::EditArea;
 
 /// Open a file, reading from fs if needed, updating title and edit_area content/highlighting, updating state, ...
-pub fn open_file(siv: &mut Cursive, file_to_open: &PathBuf) -> Result<()> {
+pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
     let mut state = siv
         .with_user_data(|state: &mut State| state.clone())
         .unwrap_or_default();
@@ -58,7 +58,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &PathBuf) -> Result<()> {
 }
 
 /// Update the title of the editor panel including the current editing state via adding `*`
-pub fn update_title(siv: &mut Cursive, state: &State, path: &PathBuf) {
+pub fn update_title(siv: &mut Cursive, state: &State, path: &Path) {
     let title = if state.is_current_file_edited() {
         format!(
             "{} *",
