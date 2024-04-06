@@ -52,23 +52,27 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
     }
 
     // check if file has been added && update title accordingly
-    update_title(siv, &state, &file_to_open);
+    update_title(siv, Some(&state), &file_to_open);
 
     Ok(())
 }
 
 /// Update the title of the editor panel including the current editing state via adding `*`
-pub fn update_title(siv: &mut Cursive, state: &State, path: &Path) {
-    let title = if state.is_current_file_edited() {
-        format!(
-            "{} *",
-            path.file_name().unwrap_or_default().to_string_lossy()
-        )
+pub fn update_title(siv: &mut Cursive, state: Option<&State>, path: &Path) {
+    let file_name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let title = if let Some(state) = state {
+        if state.is_current_file_edited() {
+            file_name + " *"
+        } else {
+            file_name
+        }
     } else {
-        path.file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string()
+        file_name
     };
 
     siv.call_on_name("editor_title", |view: &mut EditorPanel| {

@@ -543,7 +543,7 @@ pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()>
             fs::write(data.0.clone(), data.1)?;
         }
 
-        update_title(siv, &state, data.0);
+        update_title(siv, None, data.0);
 
         state.files_edited.remove(data.0);
 
