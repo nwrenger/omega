@@ -81,7 +81,6 @@ pub struct EditArea {
 
     /// Cache to avoid re-computing layout on no-op events
     size_cache: Option<XY<SizeCache>>,
-    last_size: Vec2,
 
     /// Byte offset of the currently selected grapheme.
     cursor: usize,
@@ -117,7 +116,6 @@ impl EditArea {
             enabled: true,
             on_edit: None,
             scroll_core: scroll::Core::new(),
-            last_size: Vec2::zero(),
             size_cache: None,
             cursor: 0,
         }
@@ -741,7 +739,6 @@ impl EditArea {
             Event::Key(Key::Del) if self.cursor < self.content.len() => {
                 return EventResult::Consumed(Some(self.delete()));
             }
-
             Event::Key(Key::End) => {
                 let row = self.selected_row();
                 self.cursor = self.rows[row].end;
@@ -908,7 +905,6 @@ impl View for EditArea {
     }
 
     fn layout(&mut self, size: Vec2) {
-        self.last_size = size;
         scroll::layout(self, size, true, |_s, _size| (), Self::inner_required_size);
     }
 
