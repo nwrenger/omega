@@ -841,10 +841,6 @@ impl EditArea {
 }
 
 impl View for EditArea {
-    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
-        constraint
-    }
-
     fn draw(&self, printer: &Printer) {
         printer.with_style(PaletteStyle::Primary, |printer| {
             scroll::draw_lines(self, printer, |edit_area, printer, i| {
@@ -889,6 +885,10 @@ impl View for EditArea {
                 }
             });
         });
+    }
+
+    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
+        scroll::required_size(self, constraint, true, Self::inner_required_size)
     }
 
     fn on_event(&mut self, event: Event) -> EventResult {
