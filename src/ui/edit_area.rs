@@ -2,7 +2,7 @@ use cursive::{
     direction::Direction,
     event::{Callback, Event, EventResult, Key, MouseEvent},
     reexports::log::error,
-    theme::{ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
+    theme::{BaseColor, Color, ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
     utils::{
         lines::simple::{simple_prefix, LinesIterator, Row},
         markup::StyledString,
@@ -944,7 +944,7 @@ impl View for EditArea {
                     let number_style = if i == edit_area.selected_row() {
                         Style::default()
                     } else {
-                        Style::default().combine(Style::shadow())
+                        Color::Light(BaseColor::Black).into()
                     };
                     SpannedString::styled(line_number, number_style)
                 } else {
