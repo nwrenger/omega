@@ -6,6 +6,7 @@ use cursive::{
     utils::{
         lines::simple::{simple_prefix, LinesIterator, Row},
         markup::StyledString,
+        span::SpannedString,
     },
     view::{CannotFocus, SizeCache},
     Cursive, Printer, Rect, Vec2, View, With, XY,
@@ -103,7 +104,6 @@ impl Default for EditArea {
 impl EditArea {
     /// Creates a new, empty EditArea.
     pub fn new() -> Self {
-        #[allow(deprecated)]
         EditArea {
             content: String::new(),
             max_content_width: 0,
@@ -359,7 +359,9 @@ impl EditArea {
     }
 
     fn compute_max_content_length(&mut self) {
-        self.max_content_width = self.rows.iter().map(|r| r.width).max().unwrap_or(1);
+        self.max_content_width = self.rows.iter().map(|r| r.width).max().unwrap_or(1)
+            + self.rows.len().to_string().len()
+            + 1;
     }
 
     fn compute_rows(&mut self, size: Vec2) {
@@ -776,7 +778,9 @@ impl EditArea {
                     if let Some(position) = position.checked_sub(offset) {
                         let y = position.y;
                         let y = min(y, self.rows.len() - 1);
-                        let x = position.x;
+                        let x = position
+                            .x
+                            .saturating_sub(self.rows.len().to_string().len() + 1);
                         let row = &self.rows[y];
                         let content = &self.content[row.start..row.end];
                         self.cursor = row.start + simple_prefix(content, x).length;
@@ -835,7 +839,7 @@ impl EditArea {
 
         Rect::from_size(
             Vec2::new(self.selected_col(), self.selected_row()),
-            (char_width, 1),
+            (char_width + self.rows.len().to_string().len() + 2, 1),
         )
     }
 }
@@ -853,8 +857,27 @@ impl View for EditArea {
                 let styled = cursive_syntect::parse(&text, &mut highlighter, &edit_area.syntax)
                     .unwrap_or_default();
 
+                // check if file needs to be numbered
+                let numbering = if printer.enabled && edit_area.enabled {
+                    // calculation max digits for better visual representation
+                    let max_lines_count_digits = edit_area.rows.len().to_string().len();
+
+                    let line_number = format!("{:width$} ", i + 1, width = max_lines_count_digits);
+
+                    let number_style = if i == edit_area.selected_row() {
+                        Style::default()
+                    } else {
+                        Style::default().combine(Style::shadow())
+                    };
+                    SpannedString::styled(line_number, number_style)
+                } else {
+                    SpannedString::default()
+                };
+
+                let line = StyledString::concatenate(vec![numbering.clone(), styled]);
+
                 let mut x = 0;
-                for span in styled.spans() {
+                for span in line.spans() {
                     printer.with_style(
                         ColorStyle::new(span.attr.color.front, PaletteColor::Background),
                         |printer| {
@@ -880,7 +903,7 @@ impl View for EditArea {
                             .expect("Found no char!")
                     };
                     c.append_styled(selected_char, Style::primary().combine(Effect::Reverse));
-                    let offset = text[..cursor_offset].width();
+                    let offset = text[..cursor_offset].width() + numbering.width();
                     printer.print_styled((offset, 0), &c);
                 }
             });
