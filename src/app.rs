@@ -39,6 +39,7 @@ pub struct State {
 
 pub struct FileData {
     pub str: String,
+    pub cursor: usize,
 }
 
 impl State {
@@ -172,8 +173,9 @@ pub fn start() {
     siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, None).handle(s));
 
     let mut raw_edit_area = EditArea::new().disabled();
-    // detecting edits on `EditArea`, and updating global state
-    raw_edit_area.set_on_edit(|siv, content, _| {
+
+    // detecting edits on `EditArea` and updating global state
+    raw_edit_area.set_on_edit(|siv, content, cursor| {
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap_or_default();
@@ -181,6 +183,7 @@ pub fn start() {
             let contents = state.files.get_mut(current_file);
             if let Some(contents) = contents {
                 contents.str = content.to_string();
+                contents.cursor = cursor;
                 state.files_edited.insert(current_file.clone(), true);
 
                 // update title
@@ -197,6 +200,20 @@ pub fn start() {
                     ));
                 })
                 .unwrap();
+            }
+        }
+        siv.set_user_data(state);
+    });
+
+    // detecting cursor changes and updating global state
+    raw_edit_area.set_on_interact(|siv, _, cursor| {
+        let mut state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap_or_default();
+        if let Some(current_file) = &state.current_file {
+            let contents = state.files.get_mut(current_file);
+            if let Some(contents) = contents {
+                contents.cursor = cursor;
             }
         }
         siv.set_user_data(state);

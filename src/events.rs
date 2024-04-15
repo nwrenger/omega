@@ -236,7 +236,7 @@ pub fn open_paths(
     } else if project_path.exists() {
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_content(' ');
-            edit_area.set_cursor(0);
+            edit_area.set_cursor(0, false);
             edit_area.disable();
         })
         .unwrap();

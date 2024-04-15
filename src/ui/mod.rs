@@ -30,11 +30,18 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_highlighting(&extension);
             edit_area.set_content(content.clone());
+            edit_area.set_cursor(0, false);
             edit_area.enable();
         })
         .unwrap();
 
-        siv.set_user_data(state.open_new_file(file_to_open.clone(), FileData { str: content }));
+        siv.set_user_data(state.open_new_file(
+            file_to_open.clone(),
+            FileData {
+                str: content,
+                cursor: 0,
+            },
+        ));
     } else {
         state = State {
             current_file: Some(file_to_open.clone()),
@@ -44,6 +51,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_highlighting(&extension);
             edit_area.set_content(&state.get_current_file().unwrap().str);
+            edit_area.set_cursor(state.get_current_file().unwrap().cursor, true);
             edit_area.enable();
         })
         .unwrap();

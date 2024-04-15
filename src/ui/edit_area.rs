@@ -72,6 +72,11 @@ pub struct EditArea {
     /// When `false`, we don't take any input.
     enabled: bool,
 
+    /// Callback when the cursor is moved.
+    ///
+    /// Will be called with the current content and the cursor position.
+    on_interact: Option<Rc<OnEdit>>,
+
     /// Callback when the content is modified.
     ///
     /// Will be called with the current content and the cursor position.
@@ -114,6 +119,7 @@ impl EditArea {
                 .find_syntax_plain_text()
                 .clone(),
             enabled: true,
+            on_interact: None,
             on_edit: None,
             scroll_core: scroll::Core::new(),
             size_cache: None,
@@ -154,10 +160,24 @@ impl EditArea {
     ///
     /// This method panics if `cursor` is not the beginning of a character in
     /// the content string.
-    pub fn set_cursor(&mut self, cursor: usize) {
+    ///
+    /// The `fix` var should be set to true if the content was changed
+    pub fn set_cursor(&mut self, cursor: usize, fix: bool) -> Callback {
         self.cursor = cursor;
 
-        self.fix_scroll();
+        self.scroll_core.scroll_to(
+            (
+                self.col_at(cursor),
+                if fix {
+                    self.row_at(cursor) + 6
+                } else {
+                    self.row_at(cursor)
+                },
+            )
+                .into(),
+        );
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
     /// Sets the content of the view.
@@ -232,6 +252,23 @@ impl EditArea {
         self.enabled
     }
 
+    /// Sets a callback to be called whenever the cursor is modified.
+    ///
+    /// `callback` will be called with the view
+    /// content and the current cursor position.
+    ///
+    /// This callback can safely trigger itself recursively if needed
+    /// (for instance if you call `on_event` on this view from the callback).
+    ///
+    /// If you need a mutable closure and don't care about the recursive
+    /// aspect, see [`set_on_interact_mut`](#method.set_on_interact_mut).
+    pub fn set_on_interact<F>(&mut self, callback: F)
+    where
+        F: Fn(&mut Cursive, &str, usize) + 'static,
+    {
+        self.on_interact = Some(Rc::new(callback));
+    }
+
     /// Sets a callback to be called whenever the content is modified.
     ///
     /// `callback` will be called with the view
@@ -280,58 +317,70 @@ impl EditArea {
         self.col_at(self.cursor)
     }
 
-    fn page_up(&mut self) {
+    fn page_up(&mut self) -> Callback {
         for _ in 0..5 {
             self.move_up();
         }
 
         self.fix_scroll();
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
-    fn page_down(&mut self) {
+    fn page_down(&mut self) -> Callback {
         for _ in 0..5 {
             self.move_down();
         }
 
         self.fix_scroll();
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
-    fn move_up(&mut self) {
+    fn move_up(&mut self) -> Callback {
         let row_id = self.selected_row();
         if row_id == 0 {
-            return;
+            return Callback::dummy();
         }
 
         let prev_row = self.rows[row_id - 1];
         self.cursor = prev_row.start;
 
         self.fix_scroll();
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
-    fn move_down(&mut self) {
+    fn move_down(&mut self) -> Callback {
         let row_id = self.selected_row();
         if row_id + 1 == self.rows.len() {
-            return;
+            return Callback::dummy();
         }
 
         let next_row = self.rows[row_id + 1];
         self.cursor = next_row.start;
 
         self.fix_scroll();
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the left.
-    fn move_left(&mut self) {
+    fn move_left(&mut self) -> Callback {
         self.cursor -= 1;
 
         self.fix_scroll();
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the right.
-    fn move_right(&mut self) {
+    fn move_right(&mut self) -> Callback {
         self.cursor += 1;
 
         self.fix_scroll();
+
+        self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
     fn is_cache_valid(&self, size: Vec2) -> bool {
@@ -468,7 +517,7 @@ impl EditArea {
             let new_content: String = lines.join("\n");
             if new_content != content {
                 self.set_content(new_content);
-                self.set_cursor(cursor_pos + text.to_string().len());
+                self.set_cursor(cursor_pos + text.to_string().len(), false);
                 // changed stuff soooo, needing this
                 self.make_edit_cb().unwrap_or(Callback::dummy())
             } else {
@@ -493,7 +542,7 @@ impl EditArea {
 
         let new_content: String = lines.join("\n");
         if new_content != content {
-            self.set_cursor(cursor_pos - current_line_pos);
+            self.set_cursor(cursor_pos - current_line_pos, false);
             self.set_content(new_content);
             // changed stuff soooo, needing this
             self.make_edit_cb().unwrap_or(Callback::dummy())
@@ -517,7 +566,7 @@ impl EditArea {
         let new_content = if ident {
             let new_line = str_to_add + lines[current_line];
 
-            self.set_cursor(cursor_pos + tab_size);
+            self.set_cursor(cursor_pos + tab_size, false);
 
             lines[current_line] = &new_line;
             lines.join("\n")
@@ -525,7 +574,7 @@ impl EditArea {
             let new_line = lines[current_line].replacen(&str_to_add, "", 1);
 
             if lines[current_line] != new_line {
-                self.set_cursor(cursor_pos - min(current_line_position, tab_size));
+                self.set_cursor(cursor_pos - min(current_line_position, tab_size), false);
             }
 
             lines[current_line] = &new_line;
@@ -578,7 +627,7 @@ impl EditArea {
                 + cursor_in_line
         };
 
-        self.set_cursor(new_cursor_pos);
+        self.set_cursor(new_cursor_pos, false);
 
         let new_content: String = lines.join("\n");
         if new_content != content {
@@ -605,7 +654,7 @@ impl EditArea {
                     .take(current_line)
                     .map(|line| line.len() + 1)
                     .sum::<usize>();
-                self.set_cursor(new_cursor_pos);
+                self.set_cursor(new_cursor_pos, false);
             }
             Key::Right => {
                 let new_cursor_pos = if current_line < lines.len() {
@@ -618,7 +667,7 @@ impl EditArea {
                 } else {
                     content.len()
                 };
-                self.set_cursor(new_cursor_pos);
+                self.set_cursor(new_cursor_pos, false);
             }
             _ => {}
         }
@@ -642,6 +691,18 @@ impl EditArea {
         }
 
         (current_line, cursor_in_line)
+    }
+
+    fn make_interact_cb(&self) -> Option<Callback> {
+        self.on_interact.clone().map(|cb| {
+            // Get a new Rc on the content
+            let content = self.content.clone();
+            let cursor = self.cursor;
+
+            Callback::from_fn(move |s| {
+                cb(s, &content, cursor);
+            })
+        })
     }
 
     fn make_edit_cb(&self) -> Option<Callback> {
@@ -761,12 +822,24 @@ impl EditArea {
                 self.cursor = self.rows[self.selected_row()].start;
                 self.fix_scroll();
             }
-            Event::Key(Key::Up) if self.selected_row() > 0 => self.move_up(),
-            Event::Key(Key::Down) if self.selected_row() + 1 < self.rows.len() => self.move_down(),
-            Event::Key(Key::PageUp) => self.page_up(),
-            Event::Key(Key::PageDown) => self.page_down(),
-            Event::Key(Key::Left) if self.cursor > 0 => self.move_left(),
-            Event::Key(Key::Right) if self.cursor < self.content.len() => self.move_right(),
+            Event::Key(Key::Up) if self.selected_row() > 0 => {
+                return EventResult::Consumed(Some(self.move_up()));
+            }
+            Event::Key(Key::Down) if self.selected_row() + 1 < self.rows.len() => {
+                return EventResult::Consumed(Some(self.move_down()));
+            }
+            Event::Key(Key::PageUp) => {
+                return EventResult::Consumed(Some(self.page_up()));
+            }
+            Event::Key(Key::PageDown) => {
+                return EventResult::Consumed(Some(self.page_down()));
+            }
+            Event::Key(Key::Left) if self.cursor > 0 => {
+                return EventResult::Consumed(Some(self.move_left()));
+            }
+            Event::Key(Key::Right) if self.cursor < self.content.len() => {
+                return EventResult::Consumed(Some(self.move_right()));
+            }
             Event::Mouse {
                 event: MouseEvent::Press(_),
                 position,
@@ -784,6 +857,10 @@ impl EditArea {
                         let row = &self.rows[y];
                         let content = &self.content[row.start..row.end];
                         self.cursor = row.start + simple_prefix(content, x).length;
+
+                        return EventResult::Consumed(Some(
+                            self.make_interact_cb().unwrap_or(Callback::dummy()),
+                        ));
                     }
                 }
             }
