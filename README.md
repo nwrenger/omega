@@ -22,6 +22,8 @@ Files that are being edited will be marked with an asterisk `*` in the title bar
 
 The editor also offers Global Keybindings for file and directory management tasks, such as adding, editing, and deleting. Please exercise caution when deleting files, as this action is irreversible, with no intermediate trash bin for recovery.
 
+> Moving the cursor/selector via mouse input, arrow keys and `Tab` is also possible.
+
 ## Bindings
 
 | Global                        | Keybinding   |
@@ -45,8 +47,6 @@ The editor also offers Global Keybindings for file and directory management task
 | Move Cursor to EoL | `Shift` + <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> |
 | Ident              | `Tab`                                         |
 | Remove Ident       | `Shift` + `Tab`                               |
-
-> Moving the cursor via mouse input is also possible.
 
 ## Installation
 
