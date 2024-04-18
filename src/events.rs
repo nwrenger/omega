@@ -18,7 +18,7 @@ use crate::{
     },
     error::{Error, Result, ResultExt},
     ui::{
-        edit_area::EditArea,
+        edit_area::{Cursor, EditArea},
         file_tree::{load_parent, TreeEntry},
         open_file, path_input, update_title,
     },
@@ -236,7 +236,7 @@ pub fn open_paths(
     } else if project_path.exists() {
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_content(' ');
-            edit_area.set_cursor(0, false);
+            edit_area.set_cursor(Cursor::default());
             edit_area.disable();
         })
         .unwrap();

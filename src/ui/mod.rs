@@ -13,7 +13,7 @@ use crate::{
     error::Result,
 };
 
-use self::edit_area::EditArea;
+use self::edit_area::{Cursor, EditArea};
 
 /// Open a file, reading from fs if needed, updating title and edit_area content/highlighting, updating state, ...
 pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
@@ -30,7 +30,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_highlighting(&extension);
             edit_area.set_content(content.clone());
-            edit_area.set_cursor(0, false);
+            edit_area.set_cursor(Cursor::default());
             edit_area.enable();
         })
         .unwrap();
@@ -39,7 +39,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
             file_to_open.clone(),
             FileData {
                 str: content,
-                cursor: 0,
+                cursor: Cursor::default(),
             },
         ));
     } else {
@@ -51,7 +51,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_highlighting(&extension);
             edit_area.set_content(&state.get_current_file().unwrap().str);
-            edit_area.set_cursor(state.get_current_file().unwrap().cursor, true);
+            edit_area.set_cursor(state.get_current_file().unwrap().cursor);
             edit_area.enable();
         })
         .unwrap();

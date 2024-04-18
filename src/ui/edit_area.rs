@@ -15,7 +15,10 @@ use cursive::{
     impl_scroller,
     view::{scroll, ScrollStrategy},
 };
-use std::{cmp::min, rc::Rc};
+use std::{
+    cmp::{max, min},
+    rc::Rc,
+};
 use syntect::{
     highlighting::{Theme, ThemeSet},
     parsing::{SyntaxReference, SyntaxSet},
@@ -46,7 +49,18 @@ use unicode_width::UnicodeWidthStr;
 ///
 /// Arguments are the `Cursive`, current content of the input and cursor
 /// position
-pub type OnEdit = dyn Fn(&mut Cursive, &str, usize);
+pub type OnEdit = dyn Fn(&mut Cursive, &str, Cursor);
+
+/// The cursor offset
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Cursor {
+    /// Vertical rows from top, rows are separated with a `\n`
+    pub row: usize,
+    /// From left to right
+    pub column: usize,
+    /// Byte offset of the currently selected grapheme
+    pub byte_offset: usize,
+}
 
 pub struct EditArea {
     // TODO: use a smarter data structure (rope?)
@@ -88,8 +102,8 @@ pub struct EditArea {
     /// Cache to avoid re-computing layout on no-op events
     size_cache: Option<XY<SizeCache>>,
 
-    /// Byte offset of the currently selected grapheme.
-    cursor: usize,
+    /// Cursor offset view the `struct::Cursor` for further details
+    cursor: Cursor,
 }
 
 impl_scroller!(EditArea::scroll_core);
@@ -123,7 +137,7 @@ impl EditArea {
             on_edit: None,
             scroll_core: scroll::Core::new(),
             size_cache: None,
-            cursor: 0,
+            cursor: Cursor::default(),
         }
         .with(|area| {
             // Make sure we have valid rows, even for empty text.
@@ -147,10 +161,8 @@ impl EditArea {
         self.size_cache = None;
     }
 
-    /// Returns the position of the cursor in the content string.
-    ///
-    /// This is a byte index.
-    pub fn cursor(&self) -> usize {
+    /// Returns the `Cursor` in the content string.
+    pub fn cursor(&self) -> Cursor {
         self.cursor
     }
 
@@ -162,22 +174,38 @@ impl EditArea {
     /// the content string.
     ///
     /// The `fix` var should be set to true if the content was changed
-    pub fn set_cursor(&mut self, cursor: usize, fix: bool) -> Callback {
+    pub fn set_cursor(&mut self, cursor: Cursor) -> Callback {
         self.cursor = cursor;
 
-        self.scroll_core.scroll_to(
-            (
-                self.col_at(cursor),
-                if fix {
-                    self.row_at(cursor) + 6
-                } else {
-                    self.row_at(cursor)
-                },
-            )
-                .into(),
-        );
+        // fix scroll
+        self.scroll_core.scroll_to(Vec2::new(
+            self.cursor.column,
+            if self.selected_row() != 0 {
+                self.cursor.row + 6
+            } else {
+                0
+            },
+        ));
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
+    }
+
+    /// Sets the `Cursor` from a given byte offset
+    fn set_curser_from_byte_offset(&mut self, byte_offset: usize) -> Callback {
+        self.set_cursor(Cursor {
+            row: self.row_at(byte_offset),
+            column: self.col_at(byte_offset),
+            byte_offset,
+        })
+    }
+
+    /// Only updates the byte offset
+    fn set_byte_offset(&mut self, byte_offset: usize) -> Callback {
+        self.set_cursor(Cursor {
+            row: self.cursor.row,
+            column: self.cursor.column,
+            byte_offset,
+        })
     }
 
     /// Sets the content of the view.
@@ -185,12 +213,12 @@ impl EditArea {
         self.content = content.into();
 
         // First, make sure we are within the bounds.
-        self.cursor = min(self.cursor, self.content.len());
+        self.set_curser_from_byte_offset(min(self.cursor.byte_offset, self.content.len()));
 
         // We have no guarantee cursor is now at a correct UTF8 location.
         // So look backward until we find a valid grapheme start.
-        while !self.content.is_char_boundary(self.cursor) {
-            self.cursor -= 1;
+        while !self.content.is_char_boundary(self.cursor.byte_offset) {
+            self.set_curser_from_byte_offset(self.cursor.byte_offset - 1);
         }
 
         if let Some(size) = self.size_cache.map(|s| s.map(|s| s.value)) {
@@ -264,7 +292,7 @@ impl EditArea {
     /// aspect, see [`set_on_interact_mut`](#method.set_on_interact_mut).
     pub fn set_on_interact<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, usize) + 'static,
+        F: Fn(&mut Cursive, &str, Cursor) + 'static,
     {
         self.on_interact = Some(Rc::new(callback));
     }
@@ -281,7 +309,7 @@ impl EditArea {
     /// aspect, see [`set_on_edit_mut`](#method.set_on_edit_mut).
     pub fn set_on_edit<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, usize) + 'static,
+        F: Fn(&mut Cursive, &str, Cursor) + 'static,
     {
         self.on_edit = Some(Rc::new(callback));
     }
@@ -310,19 +338,17 @@ impl EditArea {
     /// Finds the row containing the cursor
     fn selected_row(&self) -> usize {
         assert!(!self.rows.is_empty(), "Rows should never be empty.");
-        self.row_at(self.cursor)
+        self.row_at(self.cursor.byte_offset)
     }
 
     fn selected_col(&self) -> usize {
-        self.col_at(self.cursor)
+        self.col_at(self.cursor.byte_offset)
     }
 
     fn page_up(&mut self) -> Callback {
         for _ in 0..5 {
             self.move_up();
         }
-
-        self.fix_scroll();
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
@@ -331,8 +357,6 @@ impl EditArea {
         for _ in 0..5 {
             self.move_down();
         }
-
-        self.fix_scroll();
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
@@ -344,9 +368,8 @@ impl EditArea {
         }
 
         let prev_row = self.rows[row_id - 1];
-        self.cursor = prev_row.start;
-
-        self.fix_scroll();
+        let prev_cursor = self.cursor;
+        self.set_byte_offset(prev_row.start + prev_cursor.column.clamp(0, prev_row.width));
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
@@ -358,27 +381,22 @@ impl EditArea {
         }
 
         let next_row = self.rows[row_id + 1];
-        self.cursor = next_row.start;
-
-        self.fix_scroll();
+        let prev_cursor = self.cursor;
+        self.set_byte_offset(next_row.start + prev_cursor.column.clamp(0, next_row.width));
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the left.
     fn move_left(&mut self) -> Callback {
-        self.cursor -= 1;
-
-        self.fix_scroll();
+        self.set_curser_from_byte_offset(self.cursor.byte_offset - 1);
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the right.
     fn move_right(&mut self) -> Callback {
-        self.cursor += 1;
-
-        self.fix_scroll();
+        self.set_curser_from_byte_offset(self.cursor.byte_offset + 1);
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
@@ -435,20 +453,20 @@ impl EditArea {
     }
 
     fn delete(&mut self) -> Callback {
-        if self.cursor == self.content.len() {
+        if self.cursor.byte_offset == self.content.len() {
             return Callback::dummy();
         }
-        let len = self.content[self.cursor..]
+        let len = self.content[self.cursor.byte_offset..]
             .graphemes(true)
             .next()
             .unwrap()
             .len();
-        let start = self.cursor;
-        let end = self.cursor + len;
+        let start = self.cursor.byte_offset;
+        let end = start + len;
         for _ in self.content.drain(start..end) {}
 
         let selected_row = self.selected_row();
-        if self.cursor == self.rows[selected_row].end {
+        if self.cursor.byte_offset == self.rows[selected_row].end {
             // We're removing an (implicit) newline.
             // This means merging two rows.
             let new_end = self.rows[selected_row + 1].end;
@@ -469,7 +487,7 @@ impl EditArea {
     fn insert(&mut self, ch: char) -> Callback {
         // First, we inject the data, but keep the cursor unmoved
         // (So the cursor is to the left of the injected char)
-        self.content.insert(self.cursor, ch);
+        self.content.insert(self.cursor.byte_offset, ch);
 
         // Then, we shift the indexes of every row after this one.
         let shift = ch.len_utf8();
@@ -481,7 +499,7 @@ impl EditArea {
         for row in &mut self.rows.iter_mut().skip(1 + selected_row) {
             row.shift(shift);
         }
-        self.cursor += shift;
+        self.set_curser_from_byte_offset(self.cursor.byte_offset + shift);
 
         // Finally, rows may not have the correct width anymore, so fix them.
         self.fix_damages();
@@ -491,7 +509,7 @@ impl EditArea {
     /// Copies the line where the cursor currently is
     fn copy(&mut self) {
         let content = self.get_content().to_string();
-        let cursor_pos = self.cursor();
+        let cursor_pos = self.cursor().byte_offset;
 
         let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
 
@@ -504,7 +522,7 @@ impl EditArea {
     /// Pasts the current clipboard
     fn paste(&mut self) -> Callback {
         let content = self.get_content().to_string();
-        let cursor_pos = self.cursor();
+        let cursor_pos = self.cursor().byte_offset;
 
         let (current_line, cursor_in_line) = Self::get_cursor_line_info(&content, cursor_pos);
 
@@ -517,7 +535,7 @@ impl EditArea {
             let new_content: String = lines.join("\n");
             if new_content != content {
                 self.set_content(new_content);
-                self.set_cursor(cursor_pos + text.to_string().len(), false);
+                self.set_curser_from_byte_offset(cursor_pos + text.to_string().len());
                 // changed stuff soooo, needing this
                 self.make_edit_cb().unwrap_or(Callback::dummy())
             } else {
@@ -531,7 +549,7 @@ impl EditArea {
     /// Cuts the line where the cursor currently is
     fn cut(&mut self) -> Callback {
         let content = self.get_content().to_string();
-        let cursor_pos = self.cursor();
+        let cursor_pos = self.cursor().byte_offset;
 
         let (current_line, current_line_pos) = Self::get_cursor_line_info(&content, cursor_pos);
 
@@ -542,7 +560,7 @@ impl EditArea {
 
         let new_content: String = lines.join("\n");
         if new_content != content {
-            self.set_cursor(cursor_pos - current_line_pos, false);
+            self.set_curser_from_byte_offset(cursor_pos - current_line_pos);
             self.set_content(new_content);
             // changed stuff soooo, needing this
             self.make_edit_cb().unwrap_or(Callback::dummy())
@@ -554,7 +572,7 @@ impl EditArea {
     /// Implements the tabulator
     fn tabulator(&mut self, ident: bool) -> Callback {
         let content = self.get_content().to_string();
-        let cursor_pos = self.cursor();
+        let cursor_pos = self.cursor().byte_offset;
 
         let (current_line, current_line_position) =
             Self::get_cursor_line_info(&content, cursor_pos);
@@ -566,7 +584,7 @@ impl EditArea {
         let new_content = if ident {
             let new_line = str_to_add + lines[current_line];
 
-            self.set_cursor(cursor_pos + tab_size, false);
+            self.set_curser_from_byte_offset(cursor_pos + tab_size);
 
             lines[current_line] = &new_line;
             lines.join("\n")
@@ -574,7 +592,7 @@ impl EditArea {
             let new_line = lines[current_line].replacen(&str_to_add, "", 1);
 
             if lines[current_line] != new_line {
-                self.set_cursor(cursor_pos - min(current_line_position, tab_size), false);
+                self.set_curser_from_byte_offset(cursor_pos - min(current_line_position, tab_size));
             }
 
             lines[current_line] = &new_line;
@@ -592,7 +610,7 @@ impl EditArea {
     /// Moves the line withing the cursor in the specified direction
     fn move_line(&mut self, direction: Key) -> Callback {
         let content = self.get_content().to_string();
-        let cursor_pos = self.cursor();
+        let cursor_pos = self.cursor().byte_offset;
 
         let (current_line, cursor_in_line) = Self::get_cursor_line_info(&content, cursor_pos);
 
@@ -627,7 +645,7 @@ impl EditArea {
                 + cursor_in_line
         };
 
-        self.set_cursor(new_cursor_pos, false);
+        self.set_curser_from_byte_offset(new_cursor_pos);
 
         let new_content: String = lines.join("\n");
         if new_content != content {
@@ -642,7 +660,7 @@ impl EditArea {
     /// Move cursor to the start or end of the current line
     fn move_cursor_end(&mut self, direction: Key) {
         let content = self.get_content().to_string();
-        let cursor_pos = self.cursor();
+        let cursor_pos = self.cursor().byte_offset;
 
         let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
 
@@ -654,7 +672,7 @@ impl EditArea {
                     .take(current_line)
                     .map(|line| line.len() + 1)
                     .sum::<usize>();
-                self.set_cursor(new_cursor_pos, false);
+                self.set_curser_from_byte_offset(new_cursor_pos);
             }
             Key::Right => {
                 let new_cursor_pos = if current_line < lines.len() {
@@ -667,7 +685,7 @@ impl EditArea {
                 } else {
                     content.len()
                 };
-                self.set_cursor(new_cursor_pos, false);
+                self.set_curser_from_byte_offset(new_cursor_pos);
             }
             _ => {}
         }
@@ -717,12 +735,6 @@ impl EditArea {
         })
     }
 
-    /// Fix scrolling
-    fn fix_scroll(&mut self) {
-        self.scroll_core
-            .scroll_to((self.selected_col(), self.selected_row()).into());
-    }
-
     /// Fix a damage located at the cursor.
     ///
     /// The only damages are assumed to have occured around the cursor.
@@ -750,9 +762,9 @@ impl EditArea {
 
         // We don't need to go beyond a newline.
         // If we don't find one, end of the text it is.
-        let last_byte = self.content[self.cursor..]
+        let last_byte = self.content[self.cursor.byte_offset..]
             .find('\n')
-            .map(|i| 1 + i + self.cursor);
+            .map(|i| 1 + i + self.cursor.byte_offset);
         let last_row = last_byte.map_or(self.rows.len(), |last_byte| self.row_at(last_byte));
         let last_byte = last_byte.unwrap_or(self.content.len());
 
@@ -775,9 +787,8 @@ impl EditArea {
         let affected_rows = first_row..last_row;
         let replacement_rows = new_rows.into_iter().map(|row| row.shifted(first_byte));
         self.rows.splice(affected_rows, replacement_rows);
-        // other fixes
+        // other fix
         self.fix_ghost_row();
-        self.fix_scroll();
         // also compute the max length, that could have changed
         self.compute_max_content_length();
     }
@@ -793,34 +804,30 @@ impl EditArea {
                 return EventResult::Consumed(Some(self.insert(ch)));
             }
             Event::Key(Key::Enter) => {
-                self.fix_scroll();
                 return EventResult::Consumed(Some(self.insert('\n')));
             }
-            Event::Key(Key::Backspace) if self.cursor > 0 => {
+            Event::Key(Key::Backspace) if self.cursor.byte_offset > 0 => {
                 return EventResult::Consumed(Some(self.backspace()));
             }
-            Event::Key(Key::Del) if self.cursor < self.content.len() => {
+            Event::Key(Key::Del) if self.cursor.byte_offset < self.content.len() => {
                 return EventResult::Consumed(Some(self.delete()));
             }
             Event::Key(Key::End) => {
                 let row = self.selected_row();
-                self.cursor = self.rows[row].end;
-                if row + 1 < self.rows.len() && self.cursor == self.rows[row + 1].start {
+                self.set_curser_from_byte_offset(self.rows[row].end);
+                if row + 1 < self.rows.len() && self.cursor.byte_offset == self.rows[row + 1].start
+                {
                     self.move_left();
                 }
-                self.fix_scroll();
             }
             Event::Ctrl(Key::Home) => {
-                self.cursor = 0;
-                self.fix_scroll();
+                self.set_curser_from_byte_offset(0);
             }
             Event::Ctrl(Key::End) => {
-                self.cursor = self.content.len();
-                self.fix_scroll();
+                self.set_curser_from_byte_offset(self.content.len());
             }
             Event::Key(Key::Home) => {
-                self.cursor = self.rows[self.selected_row()].start;
-                self.fix_scroll();
+                self.set_curser_from_byte_offset(self.rows[self.selected_row()].start);
             }
             Event::Key(Key::Up) if self.selected_row() > 0 => {
                 return EventResult::Consumed(Some(self.move_up()));
@@ -834,10 +841,10 @@ impl EditArea {
             Event::Key(Key::PageDown) => {
                 return EventResult::Consumed(Some(self.page_down()));
             }
-            Event::Key(Key::Left) if self.cursor > 0 => {
+            Event::Key(Key::Left) if self.cursor.byte_offset > 0 => {
                 return EventResult::Consumed(Some(self.move_left()));
             }
-            Event::Key(Key::Right) if self.cursor < self.content.len() => {
+            Event::Key(Key::Right) if self.cursor.byte_offset < self.content.len() => {
                 return EventResult::Consumed(Some(self.move_right()));
             }
             Event::Mouse {
@@ -856,7 +863,9 @@ impl EditArea {
                             .saturating_sub(self.rows.len().to_string().len() + 1);
                         let row = &self.rows[y];
                         let content = &self.content[row.start..row.end];
-                        self.cursor = row.start + simple_prefix(content, x).length;
+                        self.set_curser_from_byte_offset(
+                            row.start + simple_prefix(content, x).length,
+                        );
 
                         return EventResult::Consumed(Some(
                             self.make_interact_cb().unwrap_or(Callback::dummy()),
@@ -896,18 +905,22 @@ impl EditArea {
     }
 
     /// Compute the required size for the content.
-    fn inner_required_size(&mut self, _: Vec2) -> Vec2 {
-        Vec2::new(self.max_content_width + 1, self.rows.len())
+    fn inner_required_size(&mut self, vec: Vec2) -> Vec2 {
+        Vec2::new(
+            max(self.max_content_width + 1, vec.x),
+            // max(self.rows.len(), vec.y)
+            self.rows.len(),
+        )
     }
 
     fn inner_important_area(&self, _: Vec2) -> Rect {
         // The important area is a single character
-        let char_width = if self.cursor >= self.content.len() {
+        let char_width = if self.cursor.byte_offset >= self.content.len() {
             // If we're are the end of the content, it'll be a space
             1
         } else {
             // Otherwise it's the selected grapheme
-            self.content[self.cursor..]
+            self.content[self.cursor.byte_offset..]
                 .graphemes(true)
                 .next()
                 .unwrap()
@@ -969,7 +982,7 @@ impl View for EditArea {
                     && printer.enabled
                     && edit_area.enabled
                 {
-                    let cursor_offset = edit_area.cursor - row.start;
+                    let cursor_offset = edit_area.cursor.byte_offset - row.start;
                     let mut c = StyledString::new();
                     let selected_char = if cursor_offset == text.len() {
                         " "

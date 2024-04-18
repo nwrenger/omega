@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::ui::edit_area::EditArea;
+use crate::ui::edit_area::{Cursor, EditArea};
 use cursive::{
     backends,
     event::{Event, Key},
@@ -39,7 +39,7 @@ pub struct State {
 
 pub struct FileData {
     pub str: String,
-    pub cursor: usize,
+    pub cursor: Cursor,
 }
 
 impl State {
