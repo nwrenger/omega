@@ -181,7 +181,7 @@ impl EditArea {
         self.scroll_core.scroll_to(Vec2::new(
             self.cursor.column,
             if self.selected_row() != 0 {
-                self.cursor.row + 6
+                self.cursor.row + 3
             } else {
                 0
             },
