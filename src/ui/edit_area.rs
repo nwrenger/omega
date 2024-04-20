@@ -499,7 +499,14 @@ impl EditArea {
         for row in &mut self.rows.iter_mut().skip(1 + selected_row) {
             row.shift(shift);
         }
+
+        // Update cursor
         self.set_curser_from_byte_offset(self.cursor.byte_offset + shift);
+
+        // Check if newline char, if true reset the cached column.
+        if ch == '\n' {
+            self.cursor.column = 0;
+        }
 
         // Finally, rows may not have the correct width anymore, so fix them.
         self.fix_damages();
