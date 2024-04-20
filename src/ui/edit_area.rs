@@ -20,7 +20,7 @@ use std::{
     rc::Rc,
 };
 use syntect::{
-    highlighting::{Theme, ThemeSet},
+    highlighting::Theme,
     parsing::{SyntaxReference, SyntaxSet},
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -78,7 +78,7 @@ pub struct EditArea {
     syntax: SyntaxSet,
 
     /// Current Theme for highlighting
-    pub theme: Theme,
+    theme: Theme,
 
     /// Specified through file extension, the applied highlighting
     synref: SyntaxReference,
@@ -114,21 +114,15 @@ fn make_rows(text: &str) -> Vec<Row> {
     LinesIterator::new(text, width).show_spaces().collect()
 }
 
-impl Default for EditArea {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl EditArea {
-    /// Creates a new, empty EditArea.
-    pub fn new() -> Self {
+    /// Creates a new, empty EditArea with a specified theme.
+    pub fn new(theme: &Theme) -> Self {
         EditArea {
             content: String::new(),
             max_content_width: 0,
             rows: Vec::new(),
             syntax: SyntaxSet::load_defaults_newlines(),
-            theme: ThemeSet::load_defaults().themes["base16-eighties.dark"].clone(),
+            theme: theme.to_owned(),
             synref: SyntaxSet::load_defaults_newlines()
                 .find_syntax_plain_text()
                 .clone(),

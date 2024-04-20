@@ -13,6 +13,7 @@ use cursive::{
 };
 use cursive_buffered_backend::BufferedBackend;
 use cursive_tree_view::TreeView;
+use syntect::highlighting::ThemeSet;
 
 use crate::{
     error::ResultExt,
@@ -172,9 +173,12 @@ pub fn start() {
     siv.add_global_callback(Event::CtrlChar('d'), |s| events::delete(s).handle(s));
     siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, None).handle(s));
 
-    let mut raw_edit_area = EditArea::new().disabled();
+    // The current theme, needs to be passed on the general styling and the editor ui for fitting syntax highlighting style.
+    let theme = ThemeSet::load_defaults().themes["base16-eighties.dark"].clone();
 
-    // detecting edits on `EditArea` and updating global state
+    let mut raw_edit_area = EditArea::new(&theme).disabled();
+
+    // Detecting edits on `EditArea` and updating global state.
     raw_edit_area.set_on_edit(|siv, content, cursor| {
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
@@ -186,7 +190,7 @@ pub fn start() {
                 contents.cursor = cursor;
                 state.files_edited.insert(current_file.clone(), true);
 
-                // update title
+                // Update title.
                 siv.call_on_name("editor_title", |editor_panel: &mut EditorPanel| {
                     editor_panel.set_title(format!(
                         "{} *",
@@ -205,7 +209,7 @@ pub fn start() {
         siv.set_user_data(state);
     });
 
-    // detecting cursor changes and updating global state
+    // Detecting cursor changes and updating global state.
     raw_edit_area.set_on_interact(|siv, _, cursor| {
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
@@ -219,10 +223,10 @@ pub fn start() {
         siv.set_user_data(state);
     });
 
+    // Setting general styling to theme
     siv.with_theme(|t| {
         t.shadow = false;
-        if let Some(background) = raw_edit_area
-            .theme
+        if let Some(background) = theme
             .settings
             .background
             .map(cursive_syntect::translate_color)
@@ -230,8 +234,7 @@ pub fn start() {
             t.palette[cursive::theme::PaletteColor::Background] = background;
             t.palette[cursive::theme::PaletteColor::View] = background;
         }
-        if let Some(foreground) = raw_edit_area
-            .theme
+        if let Some(foreground) = theme
             .settings
             .foreground
             .map(cursive_syntect::translate_color)
@@ -243,8 +246,7 @@ pub fn start() {
             t.palette[cursive::theme::PaletteColor::TitleSecondary] = foreground;
         }
 
-        if let Some(highlight) = raw_edit_area
-            .theme
+        if let Some(highlight) = theme
             .settings
             .highlight
             .map(cursive_syntect::translate_color)
@@ -268,13 +270,16 @@ pub fn start() {
 
     siv.add_fullscreen_layer(layout);
 
-    // set initial data
+    // Set initial data.
     open_paths(&mut siv, &project_path, file_path.as_ref()).unwrap();
 
-    // start event loop
+    // Start event loop.
     siv.run_with(|| backend());
 }
 
+/// Initiates a buffered Backend for improved visuals
+///
+/// For windows it uses `crossterm`, for unix it uses `ncurses`
 fn backend() -> Box<BufferedBackend> {
     #[cfg(unix)]
     {
