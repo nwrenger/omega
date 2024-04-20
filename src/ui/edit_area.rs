@@ -948,9 +948,9 @@ impl View for EditArea {
                 let styled = cursive_syntect::parse(&text, &mut highlighter, &edit_area.syntax)
                     .unwrap_or_default();
 
-                // check if file needs to be numbered
+                // Check if file needs to be numbered.
                 let numbering = if printer.enabled && edit_area.enabled {
-                    // calculation max digits for better visual representation
+                    // Calculate max digits for better visual representation.
                     let max_lines_count_digits = edit_area.rows.len().to_string().len();
 
                     let line_number = format!("{:width$} ", i + 1, width = max_lines_count_digits);
