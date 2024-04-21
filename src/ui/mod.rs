@@ -6,7 +6,7 @@ pub mod path_input;
 
 use std::{fs, path::Path};
 
-use cursive::Cursive;
+use cursive::{Cursive, Vec2};
 
 use crate::{
     app::{EditorPanel, FileData, State},
@@ -31,6 +31,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
             edit_area.set_highlighting(&extension);
             edit_area.set_content(content.clone());
             edit_area.set_cursor(Cursor::default());
+            edit_area.set_scroll(Vec2::zero());
             edit_area.enable();
         })
         .unwrap();
@@ -39,7 +40,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
             file_to_open.clone(),
             FileData {
                 str: content,
-                cursor: Cursor::default(),
+                ..Default::default()
             },
         ));
     } else {
@@ -52,6 +53,7 @@ pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {
             edit_area.set_highlighting(&extension);
             edit_area.set_content(&state.get_current_file().unwrap().str);
             edit_area.set_cursor(state.get_current_file().unwrap().cursor);
+            edit_area.set_scroll(state.get_current_file().unwrap().scroll_offset);
             edit_area.enable();
         })
         .unwrap();

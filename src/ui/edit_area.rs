@@ -45,11 +45,11 @@ use unicode_width::UnicodeWidthStr;
 ///     .min_height(5);
 /// ```
 
-/// Closure type for callbacks when the content is modified.
+/// Closure type for callbacks when something happens, for example the content is modified.
 ///
 /// Arguments are the `Cursive`, current content of the input and cursor
 /// position
-pub type OnEdit = dyn Fn(&mut Cursive, &str, Cursor);
+pub type OnChange = dyn Fn(&mut Cursive, &str, Vec2, Cursor);
 
 /// The cursor offset
 #[derive(Clone, Copy, Debug, Default)]
@@ -89,12 +89,17 @@ pub struct EditArea {
     /// Callback when the cursor is moved.
     ///
     /// Will be called with the current content and the cursor position.
-    on_interact: Option<Rc<OnEdit>>,
+    on_interact: Option<Rc<OnChange>>,
 
     /// Callback when the content is modified.
     ///
     /// Will be called with the current content and the cursor position.
-    on_edit: Option<Rc<OnEdit>>,
+    on_scroll: Option<Rc<OnChange>>,
+
+    /// Callback when the content is modified.
+    ///
+    /// Will be called with the current content and the cursor position.
+    on_edit: Option<Rc<OnChange>>,
 
     /// Base for scrolling features
     scroll_core: scroll::Core,
@@ -128,6 +133,7 @@ impl EditArea {
                 .clone(),
             enabled: true,
             on_interact: None,
+            on_scroll: None,
             on_edit: None,
             scroll_core: scroll::Core::new(),
             size_cache: None,
@@ -155,6 +161,21 @@ impl EditArea {
         self.size_cache = None;
     }
 
+    /// Returns the current scroll offset.
+    pub fn scroll(&self) -> Vec2 {
+        self.scroll_core.content_viewport().top_left()
+    }
+
+    /// Moves the scroll to the given position.
+    pub fn set_scroll(&mut self, pos: Vec2) -> Callback {
+        // Need to refresh layout, content could have been changed.
+        self.layout(self.scroll_core.last_outer_size());
+
+        self.scroll_core.set_offset(pos);
+
+        self.on_scroll_callback().unwrap_or(Callback::dummy())
+    }
+
     /// Returns the `Cursor` in the content string.
     pub fn cursor(&self) -> Cursor {
         self.cursor
@@ -166,16 +187,17 @@ impl EditArea {
     ///
     /// This method panics if `cursor` is not the beginning of a character in
     /// the content string.
-    ///
-    /// The `fix` var should be set to true if the content was changed
     pub fn set_cursor(&mut self, cursor: Cursor) -> Callback {
+        // Need to refresh layout, content could have been changed.
+        self.layout(self.scroll_core.last_outer_size());
+
         self.cursor = cursor;
 
         // fix scroll
         self.scroll_core
             .scroll_to(Vec2::new(self.cursor.column, self.cursor.row));
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     /// Sets the `Cursor` from a given byte offset
@@ -214,7 +236,7 @@ impl EditArea {
             self.compute_rows(size);
         }
 
-        self.make_edit_cb().unwrap_or_else(Callback::dummy)
+        self.on_edit_callback().unwrap_or_else(Callback::dummy)
     }
 
     /// Sets the content of the view.
@@ -280,9 +302,26 @@ impl EditArea {
     /// aspect, see [`set_on_interact_mut`](#method.set_on_interact_mut).
     pub fn set_on_interact<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Cursor) + 'static,
+        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static,
     {
         self.on_interact = Some(Rc::new(callback));
+    }
+
+    /// Sets a callback to be called whenever the view is scrolled.
+    ///
+    /// `callback` will be called with the view
+    /// content and the current cursor position.
+    ///
+    /// This callback can safely trigger itself recursively if needed
+    /// (for instance if you call `on_event` on this view from the callback).
+    ///
+    /// If you need a mutable closure and don't care about the recursive
+    /// aspect, see [`set_on_scroll_mut`](#method.set_on_scroll_mut).
+    pub fn set_on_scroll<F>(&mut self, callback: F)
+    where
+        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static,
+    {
+        self.on_scroll = Some(Rc::new(callback));
     }
 
     /// Sets a callback to be called whenever the content is modified.
@@ -297,7 +336,7 @@ impl EditArea {
     /// aspect, see [`set_on_edit_mut`](#method.set_on_edit_mut).
     pub fn set_on_edit<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Cursor) + 'static,
+        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static,
     {
         self.on_edit = Some(Rc::new(callback));
     }
@@ -338,7 +377,7 @@ impl EditArea {
             self.move_up();
         }
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     fn page_down(&mut self) -> Callback {
@@ -346,7 +385,7 @@ impl EditArea {
             self.move_down();
         }
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     fn move_up(&mut self) -> Callback {
@@ -359,7 +398,7 @@ impl EditArea {
         let prev_cursor = self.cursor;
         self.set_byte_offset(prev_row.start + prev_cursor.column.clamp(0, prev_row.width));
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     fn move_down(&mut self) -> Callback {
@@ -372,21 +411,21 @@ impl EditArea {
         let prev_cursor = self.cursor;
         self.set_byte_offset(next_row.start + prev_cursor.column.clamp(0, next_row.width));
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the left.
     fn move_left(&mut self) -> Callback {
         self.set_curser_from_byte_offset(self.cursor.byte_offset - 1);
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the right.
     fn move_right(&mut self) -> Callback {
         self.set_curser_from_byte_offset(self.cursor.byte_offset + 1);
 
-        self.make_interact_cb().unwrap_or(Callback::dummy())
+        self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     fn is_cache_valid(&self, size: Vec2) -> bool {
@@ -469,7 +508,7 @@ impl EditArea {
         }
 
         self.fix_damages();
-        self.make_edit_cb().unwrap_or_else(Callback::dummy)
+        self.on_edit_callback().unwrap_or_else(Callback::dummy)
     }
 
     fn insert(&mut self, ch: char) -> Callback {
@@ -498,7 +537,7 @@ impl EditArea {
 
         // Finally, rows may not have the correct width anymore, so fix them.
         self.fix_damages();
-        self.make_edit_cb().unwrap_or_else(Callback::dummy)
+        self.on_edit_callback().unwrap_or_else(Callback::dummy)
     }
 
     /// Copies the line where the cursor currently is
@@ -532,7 +571,7 @@ impl EditArea {
                 self.set_content(new_content);
                 self.set_curser_from_byte_offset(cursor_pos + text.to_string().len());
                 // changed stuff soooo, needing this
-                self.make_edit_cb().unwrap_or(Callback::dummy())
+                self.on_edit_callback().unwrap_or(Callback::dummy())
             } else {
                 Callback::dummy()
             }
@@ -558,7 +597,7 @@ impl EditArea {
             self.set_curser_from_byte_offset(cursor_pos - current_line_pos);
             self.set_content(new_content);
             // changed stuff soooo, needing this
-            self.make_edit_cb().unwrap_or(Callback::dummy())
+            self.on_edit_callback().unwrap_or(Callback::dummy())
         } else {
             Callback::dummy()
         }
@@ -596,7 +635,7 @@ impl EditArea {
         if new_content != content {
             self.set_content(new_content);
             // changed stuff soooo, needing this
-            self.make_edit_cb().unwrap_or(Callback::dummy())
+            self.on_edit_callback().unwrap_or(Callback::dummy())
         } else {
             Callback::dummy()
         }
@@ -646,7 +685,7 @@ impl EditArea {
         if new_content != content {
             self.set_content(new_content);
             // changed stuff soooo, needing this
-            self.make_edit_cb().unwrap_or(Callback::dummy())
+            self.on_edit_callback().unwrap_or(Callback::dummy())
         } else {
             Callback::dummy()
         }
@@ -706,26 +745,42 @@ impl EditArea {
         (current_line, cursor_in_line)
     }
 
-    fn make_interact_cb(&self) -> Option<Callback> {
+    fn on_interact_callback(&self) -> Option<Callback> {
         self.on_interact.clone().map(|cb| {
             // Get a new Rc on the content
             let content = self.content.clone();
+            let scroll_offset = self.scroll_core.content_viewport().top_left();
             let cursor = self.cursor;
 
             Callback::from_fn(move |s| {
-                cb(s, &content, cursor);
+                cb(s, &content, scroll_offset, cursor);
             })
         })
     }
 
-    fn make_edit_cb(&self) -> Option<Callback> {
-        self.on_edit.clone().map(|cb| {
+    /// Run any callback after scrolling.
+    fn on_scroll_callback(&mut self) -> Option<Callback> {
+        self.on_scroll.clone().map(|cb| {
             // Get a new Rc on the content
             let content = self.content.clone();
+            let scroll_offset = self.scroll_core.content_viewport().top_left();
             let cursor = self.cursor;
 
             Callback::from_fn(move |s| {
-                cb(s, &content, cursor);
+                cb(s, &content, scroll_offset, cursor);
+            })
+        })
+    }
+
+    fn on_edit_callback(&self) -> Option<Callback> {
+        self.on_edit.clone().map(|cb| {
+            // Get a new Rc on the content
+            let content = self.content.clone();
+            let scroll_offset = self.scroll_core.content_viewport().top_left();
+            let cursor = self.cursor;
+
+            Callback::from_fn(move |s| {
+                cb(s, &content, scroll_offset, cursor);
             })
         })
     }
@@ -996,12 +1051,16 @@ impl View for EditArea {
     }
 
     fn on_event(&mut self, event: Event) -> EventResult {
-        scroll::on_event(
+        match scroll::on_event(
             self,
             event,
             Self::inner_on_event,
             Self::inner_important_area,
-        )
+        ) {
+            EventResult::Ignored => EventResult::Ignored,
+            // If the event was consumed, then we may have scrolled.
+            other => other.and(EventResult::Consumed(self.on_scroll_callback())),
+        }
     }
 
     fn take_focus(&mut self, _: Direction) -> Result<EventResult, CannotFocus> {

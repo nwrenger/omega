@@ -10,6 +10,7 @@ use cursive::{
     event::{Event, Key},
     view::{Nameable, Resizable},
     views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
+    Vec2,
 };
 use cursive_buffered_backend::BufferedBackend;
 use cursive_tree_view::TreeView;
@@ -40,6 +41,7 @@ pub struct State {
 
 pub struct FileData {
     pub str: String,
+    pub scroll_offset: Vec2,
     pub cursor: Cursor,
 }
 
@@ -179,7 +181,7 @@ pub fn start() {
     let mut raw_edit_area = EditArea::new(&theme).disabled();
 
     // Detecting edits on `EditArea` and updating global state.
-    raw_edit_area.set_on_edit(|siv, content, cursor| {
+    raw_edit_area.set_on_edit(|siv, content, scroll_offset, cursor| {
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap_or_default();
@@ -187,6 +189,7 @@ pub fn start() {
             let contents = state.files.get_mut(current_file);
             if let Some(contents) = contents {
                 contents.str = content.to_string();
+                contents.scroll_offset = scroll_offset;
                 contents.cursor = cursor;
                 state.files_edited.insert(current_file.clone(), true);
 
@@ -210,14 +213,29 @@ pub fn start() {
     });
 
     // Detecting cursor changes and updating global state.
-    raw_edit_area.set_on_interact(|siv, _, cursor| {
+    raw_edit_area.set_on_interact(|siv, _, scroll_offset, cursor| {
         let mut state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap_or_default();
         if let Some(current_file) = &state.current_file {
             let contents = state.files.get_mut(current_file);
             if let Some(contents) = contents {
+                contents.scroll_offset = scroll_offset;
                 contents.cursor = cursor;
+            }
+        }
+        siv.set_user_data(state);
+    });
+
+    // Detecting scrolling and updating global state.
+    raw_edit_area.set_on_scroll(|siv, _, scroll_offset, _| {
+        let mut state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap_or_default();
+        if let Some(current_file) = &state.current_file {
+            let contents = state.files.get_mut(current_file);
+            if let Some(contents) = contents {
+                contents.scroll_offset = scroll_offset;
             }
         }
         siv.set_user_data(state);

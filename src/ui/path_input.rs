@@ -22,13 +22,14 @@ pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
     let view_name_clone = view_name.clone();
     let select_name_clone = select_name.clone();
     select.set_on_submit(move |siv, new_path: &String| {
-        siv.call_on_name(&view_name_clone, |siv: &mut EditView| {
-            siv.set_content(new_path);
+        siv.call_on_name(&view_name_clone, |edit_view: &mut EditView| {
+            edit_view.set_content(new_path);
         })
         .unwrap();
-        siv.call_on_name(&select_name_clone, |view: &mut SelectView| {
-            view.clear();
-            view.add_all_str(&get_paths(&PathBuf::from(new_path), files).unwrap_or_default());
+        siv.call_on_name(&select_name_clone, |select_view: &mut SelectView| {
+            select_view.clear();
+            select_view
+                .add_all_str(&get_paths(&PathBuf::from(new_path), files).unwrap_or_default());
         })
         .unwrap();
     });

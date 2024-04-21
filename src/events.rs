@@ -7,7 +7,7 @@ use std::{
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
     views::{Dialog, EditView, LinearLayout, ListView, ScrollView, SelectView, TextView},
-    Cursive,
+    Cursive, Vec2,
 };
 use cursive_tree_view::TreeView;
 
@@ -237,6 +237,7 @@ pub fn open_paths(
         siv.call_on_name("editor", |edit_area: &mut EditArea| {
             edit_area.set_content(' ');
             edit_area.set_cursor(Cursor::default());
+            edit_area.set_scroll(Vec2::zero());
             edit_area.disable();
         })
         .unwrap();
