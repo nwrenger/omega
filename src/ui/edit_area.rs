@@ -879,11 +879,15 @@ impl EditArea {
             Event::Key(Key::Home) => {
                 self.set_curser_from_byte_offset(self.rows[self.selected_row()].start);
             }
-            Event::Key(Key::Up) if self.selected_row() > 0 => {
-                return EventResult::Consumed(Some(self.move_up()));
+            Event::Key(Key::Up) => {
+                if self.selected_row() > 0 {
+                    return EventResult::Consumed(Some(self.move_up()));
+                }
             }
-            Event::Key(Key::Down) if self.selected_row() + 1 < self.rows.len() => {
-                return EventResult::Consumed(Some(self.move_down()));
+            Event::Key(Key::Down) => {
+                if self.selected_row() + 1 < self.rows.len() {
+                    return EventResult::Consumed(Some(self.move_down()));
+                }
             }
             Event::Key(Key::PageUp) => {
                 return EventResult::Consumed(Some(self.page_up()));
@@ -891,11 +895,15 @@ impl EditArea {
             Event::Key(Key::PageDown) => {
                 return EventResult::Consumed(Some(self.page_down()));
             }
-            Event::Key(Key::Left) if self.cursor.byte_offset > 0 => {
-                return EventResult::Consumed(Some(self.move_left()));
+            Event::Key(Key::Left) => {
+                if self.cursor.byte_offset > 0 {
+                    return EventResult::Consumed(Some(self.move_left()));
+                }
             }
-            Event::Key(Key::Right) if self.cursor.byte_offset < self.content.len() => {
-                return EventResult::Consumed(Some(self.move_right()));
+            Event::Key(Key::Right) => {
+                if self.cursor.byte_offset < self.content.len() {
+                    return EventResult::Consumed(Some(self.move_right()));
+                }
             }
             Event::Mouse {
                 event: MouseEvent::Press(_),
