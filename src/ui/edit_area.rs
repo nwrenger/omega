@@ -172,14 +172,8 @@ impl EditArea {
         self.cursor = cursor;
 
         // fix scroll
-        self.scroll_core.scroll_to(Vec2::new(
-            self.cursor.column,
-            if self.selected_row() != 0 {
-                self.cursor.row + 3
-            } else {
-                0
-            },
-        ));
+        self.scroll_core
+            .scroll_to(Vec2::new(self.cursor.column, self.cursor.row));
 
         self.make_interact_cb().unwrap_or(Callback::dummy())
     }
@@ -659,7 +653,7 @@ impl EditArea {
     }
 
     /// Move cursor to the start or end of the current line
-    fn move_cursor_end(&mut self, direction: Key) {
+    fn move_cursor_end(&mut self, direction: Key) -> Callback {
         let content = self.get_content().to_string();
         let cursor_pos = self.cursor().byte_offset;
 
@@ -673,7 +667,7 @@ impl EditArea {
                     .take(current_line)
                     .map(|line| line.len() + 1)
                     .sum::<usize>();
-                self.set_curser_from_byte_offset(new_cursor_pos);
+                self.set_curser_from_byte_offset(new_cursor_pos)
             }
             Key::Right => {
                 let new_cursor_pos = if current_line < lines.len() {
@@ -686,9 +680,9 @@ impl EditArea {
                 } else {
                     content.len()
                 };
-                self.set_curser_from_byte_offset(new_cursor_pos);
+                self.set_curser_from_byte_offset(new_cursor_pos)
             }
-            _ => {}
+            _ => Callback::dummy(),
         }
     }
 
@@ -864,13 +858,9 @@ impl EditArea {
                             .saturating_sub(self.rows.len().to_string().len() + 1);
                         let row = &self.rows[y];
                         let content = &self.content[row.start..row.end];
-                        self.set_curser_from_byte_offset(
+                        return EventResult::Consumed(Some(self.set_curser_from_byte_offset(
                             row.start + simple_prefix(content, x).length,
-                        );
-
-                        return EventResult::Consumed(Some(
-                            self.make_interact_cb().unwrap_or(Callback::dummy()),
-                        ));
+                        )));
                     }
                 }
             }
@@ -888,10 +878,10 @@ impl EditArea {
                 return EventResult::Consumed(Some(self.move_line(Key::Down)));
             }
             Event::Shift(Key::Left) => {
-                self.move_cursor_end(Key::Left);
+                return EventResult::Consumed(Some(self.move_cursor_end(Key::Left)));
             }
             Event::Shift(Key::Right) => {
-                self.move_cursor_end(Key::Right);
+                return EventResult::Consumed(Some(self.move_cursor_end(Key::Right)));
             }
             Event::Key(Key::Tab) => {
                 return EventResult::Consumed(Some(self.tabulator(true)));
