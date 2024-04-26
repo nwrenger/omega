@@ -136,19 +136,32 @@ pub fn goto(siv: &mut Cursive) -> Result<()> {
         let state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap();
+
+        let mut filtered = state
+            .files
+            .iter()
+            .filter(|p| p.0.starts_with(&state.project_path))
+            .collect::<Vec<_>>();
+        filtered.sort_by(|a, b| b.0.cmp(&a.0));
+
+        let opened = filtered
+            .iter()
+            .filter(|p| p.0.starts_with(&state.project_path))
+            .map(|f| {
+                f.0.canonicalize()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+
         siv.add_layer(
             Dialog::new()
                 .title("Goto")
                 .padding_lrtb(1, 1, 1, 0)
                 .content(ScrollView::new(
                     SelectView::new()
-                        .with_all_str(
-                            state
-                                .files
-                                .iter()
-                                .filter(|p| p.0.starts_with(&state.project_path))
-                                .map(|f| f.0.to_string_lossy()),
-                        )
+                        .with_all_str(&opened)
                         .on_submit(move |siv, item: &String| {
                             let goto_file = &PathBuf::from(item);
                             if let Err(e) = open_file(siv, goto_file) {
@@ -156,7 +169,22 @@ pub fn goto(siv: &mut Cursive) -> Result<()> {
                                 return;
                             }
                             siv.pop_layer();
-                        }),
+                        })
+                        .selected(
+                            opened
+                                .iter()
+                                .position(|p| {
+                                    p == &state
+                                        .clone()
+                                        .current_file
+                                        .unwrap_or_default()
+                                        .canonicalize()
+                                        .unwrap_or_default()
+                                        .to_string_lossy()
+                                        .to_string()
+                                })
+                                .unwrap_or_default(),
+                        ),
                 ))
                 .dismiss_button("Cancel")
                 .full_width()
