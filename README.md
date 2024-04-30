@@ -67,6 +67,7 @@ It's important to note that on Unix-based systems, `omega` relies on `ncurses` a
 
 There are currently some smaller known issues:
 
+- Relatively small Performance Issues on scrolling and editing files.
 - If the content only needs a scrollbar on the x-Axis, this scrollbar won't be intractable.
 - `Tabs` are currently not rendered/shown. So some files using `Tabs` could look not like their should.
 - <kbd>&uarr;</kbd>/<kbd>&darr;</kbd>-Input inside the `Edit View` sometimes always moves the scroll, this should only happen if it needs to.
