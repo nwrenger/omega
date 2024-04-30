@@ -194,17 +194,17 @@ pub fn start() {
                 state.files_edited.insert(current_file.clone(), true);
 
                 // Update title.
-                siv.call_on_name("editor_title", |editor_panel: &mut EditorPanel| {
-                    editor_panel.set_title(format!(
-                        "{} *",
-                        state
-                            .clone()
-                            .current_file
-                            .unwrap_or_default()
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                    ));
+                let title = state
+                    .clone()
+                    .current_file
+                    .unwrap_or_default()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+                    + " *";
+                siv.call_on_name("editor_title", |view: &mut EditorPanel| {
+                    view.set_title(title);
                 })
                 .unwrap();
             }

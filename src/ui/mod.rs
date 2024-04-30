@@ -76,7 +76,7 @@ pub fn update_title(siv: &mut Cursive, state: Option<&State>, path: &Path) {
         .to_string();
 
     let title = if let Some(state) = state {
-        if state.is_current_file_edited() {
+        if state.is_file_edited(&path.to_path_buf()) {
             file_name + " *"
         } else {
             file_name

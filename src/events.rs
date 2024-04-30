@@ -142,7 +142,7 @@ pub fn goto(siv: &mut Cursive) -> Result<()> {
             .iter()
             .filter(|p| p.0.starts_with(&state.project_path))
             .collect::<Vec<_>>();
-        filtered.sort_by(|a, b| b.0.cmp(&a.0));
+        filtered.sort_by(|a, b| b.0.cmp(a.0));
 
         let opened = filtered
             .iter()
