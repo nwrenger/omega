@@ -86,10 +86,10 @@ pub fn quit(siv: &mut Cursive) -> Result<()> {
 
     let edited_files = state
         .files_edited
-        .into_iter() // Note the change to into_iter to consume the map
+        .into_iter()
         .filter(|(_, edited)| *edited)
         .map(|(path, _)| path)
-        .collect::<Vec<PathBuf>>(); // Now owns PathBuf instead of &PathBuf
+        .collect::<Vec<PathBuf>>();
 
     if edited_files.is_empty() {
         siv.quit();
@@ -100,7 +100,6 @@ pub fn quit(siv: &mut Cursive) -> Result<()> {
             layout.add_child(TextView::new(i.to_string_lossy()));
         }
 
-        // Clone edited_files for use in the Save closure
         let edited_files_for_save = edited_files.clone();
         siv.add_layer(
             Dialog::new()
@@ -155,6 +154,20 @@ pub fn goto(siv: &mut Cursive) -> Result<()> {
             })
             .collect::<Vec<_>>();
 
+        let selected = opened
+            .iter()
+            .position(|p| {
+                p == &state
+                    .clone()
+                    .current_file
+                    .unwrap_or_default()
+                    .canonicalize()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .unwrap_or_default();
+
         siv.add_layer(
             Dialog::new()
                 .title("Goto")
@@ -170,21 +183,7 @@ pub fn goto(siv: &mut Cursive) -> Result<()> {
                             }
                             siv.pop_layer();
                         })
-                        .selected(
-                            opened
-                                .iter()
-                                .position(|p| {
-                                    p == &state
-                                        .clone()
-                                        .current_file
-                                        .unwrap_or_default()
-                                        .canonicalize()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .to_string()
-                                })
-                                .unwrap_or_default(),
-                        ),
+                        .selected(selected),
                 ))
                 .dismiss_button("Cancel")
                 .full_width()

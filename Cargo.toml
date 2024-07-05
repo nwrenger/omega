@@ -28,10 +28,10 @@ unicode-segmentation = "1.11.0"
 unicode-width = "0.1.11"
 
 # cursive dependency cross plattform
-[target.'cfg(unix)'.dependencies.cursive]
+[target.'cfg(target_os = "macos")'.dependencies.cursive]
 version = "0.20.0"
 
-[target.'cfg(windows)'.dependencies.cursive]
+[target.'cfg(not(target_os = "macos"))'.dependencies.cursive]
 version = "0.20.0"
 default-features = false
 features = ["crossterm-backend"]
