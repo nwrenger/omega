@@ -231,7 +231,7 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
                     } else if inc_path.is_dir() {
                         inc_path
                     } else {
-                        Error::FileOpen("Path doesn't exists".to_string()).to_dialog(siv);
+                        Error::FileSystem("Path doesn't exists".to_string()).to_dialog(siv);
                         return;
                     };
 

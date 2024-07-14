@@ -9,7 +9,7 @@ pub enum Error {
     /// The user provided arguments are malformed
     Arguments(String),
     /// A file could not be found, opened or saved
-    FileOpen(String),
+    FileSystem(String),
     /// The Text could not be saved to the clipboard
     Clipboard(String),
 }
@@ -20,7 +20,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Arguments(e) => write!(f, "Arguments: {e}.\nForce quit via ctrl + f or toggle the goto via ctrl + d"),
-            Error::FileOpen(e) => write!(f, "File System Error: {e}. Check the file path and permissions.\nForce quit via ctrl + f or toggle the goto via ctrl + o"),
+            Error::FileSystem(e) => write!(f, "File System Error: {e}. Check the file path and permissions.\nForce quit via ctrl + f or toggle the goto via ctrl + o"),
             Error::Clipboard(e) => write!(f, "Clipboard: {e}. Ensure your clipboard manager is running.\nForce quit via ctrl + f or toggle the goto via ctrl + d"),
         }
     }
@@ -42,8 +42,8 @@ impl From<arboard::Error> for Error {
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        error!("File Error: {e}");
-        Self::FileOpen(e.to_string())
+        error!("File System Error: {e}");
+        Self::FileSystem(e.to_string())
     }
 }
 
