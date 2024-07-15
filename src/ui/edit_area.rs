@@ -392,7 +392,12 @@ impl EditArea {
 
         let prev_row = self.rows[row_id - 1];
         let prev_cursor = self.cursor;
-        self.set_byte_offset(prev_row.start + prev_cursor.column.clamp(0, prev_row.width));
+        self.set_byte_offset(
+            prev_row.start
+                + prev_cursor
+                    .column
+                    .clamp(0, prev_row.width.saturating_sub(1)),
+        );
 
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
@@ -405,7 +410,12 @@ impl EditArea {
 
         let next_row = self.rows[row_id + 1];
         let prev_cursor = self.cursor;
-        self.set_byte_offset(next_row.start + prev_cursor.column.clamp(0, next_row.width));
+        self.set_byte_offset(
+            next_row.start
+                + prev_cursor
+                    .column
+                    .clamp(0, next_row.width.saturating_sub(1)),
+        );
 
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
