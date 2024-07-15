@@ -21,7 +21,10 @@ impl fmt::Display for Error {
         match self {
             Error::Arguments(e) => write!(f, "Arguments: {e}."),
             Error::FileSystem(e) => write!(f, "File System Error: {e}."),
-            Error::Clipboard(e) => write!(f, "Clipboard: {e}. Ensure your clipboard manager is running."),
+            Error::Clipboard(e) => write!(
+                f,
+                "Clipboard: {e}. Ensure your clipboard manager is running."
+            ),
         }
     }
 }

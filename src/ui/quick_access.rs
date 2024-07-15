@@ -413,6 +413,12 @@ fn new_file(siv: &mut Cursive) -> Result<()> {
                             })
                             .unwrap();
 
+                        // Should `crate_dir_all` already catch but it doesn't so checking it here.
+                        if Path::new(&new_path).try_exists().unwrap_or(false) {
+                            Error::FileSystem("File already exists".to_string()).to_dialog(siv);
+                            return;
+                        }
+
                         if let Err(e) = fs::create_dir_all(new_path) {
                             Into::<Error>::into(e).to_dialog(siv);
                             return;
@@ -443,7 +449,7 @@ fn rename_file(siv: &mut Cursive) -> Result<()> {
             .unwrap();
         let layout = LinearLayout::vertical()
             .child(TextView::new(
-                "Note the file will be autosaved before it'll be moved/renamed!",
+                "Note file changes will be kept while it'll be moved/renamed!",
             ))
             .child(TextView::new(" "))
             .child(
@@ -526,15 +532,21 @@ fn delete_file(siv: &mut Cursive) -> Result<()> {
         let state = siv
             .with_user_data(|state: &mut State| state.clone())
             .unwrap();
+        let layout = LinearLayout::vertical()
+            .child(TextView::new(
+                "Note the file/directory will be deleted recursively and without a bin in between!",
+            ))
+            .child(TextView::new(" "))
+            .child(path_input::new(
+                &state.project_path,
+                "delete_path".to_string(),
+                true,
+            )?);
         siv.add_layer(
             Dialog::new()
                 .title("Delete")
                 .padding_lrtb(1, 1, 1, 0)
-                .content(path_input::new(
-                    &state.project_path,
-                    "delete_path".to_string(),
-                    true,
-                )?)
+                .content(layout)
                 .button("Confirm", |siv| {
                     let mut state = siv
                         .with_user_data(|state: &mut State| state.clone())
