@@ -217,7 +217,7 @@ fn info(siv: &mut Cursive) -> Result<()> {
                         // shortcuts
                         // global
                         .child("Open Quick Access", TextView::new("Ctrl + p"))
-                        .child("Close current Dialog", TextView::new("Esc"))
+                        .child("Close current view", TextView::new("Esc"))
                         .delimiter()
                         // quick access commands
                         .child("Open Debugger", TextView::new("debug"))

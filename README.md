@@ -31,7 +31,7 @@ Because you'll be opening many views, there is a global shortcut `Esc` to close 
 | Global               | Keybinding   |
 | -------------------- | ------------ |
 | Open Quick Access    | `Ctrl` + `p` |
-| Close current Dialog | `Esc`        |
+| Close current view | `Esc`        |
 
 | Quick Access                   | Command Name |
 | ------------------------------ | ------------ |
