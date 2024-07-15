@@ -1,7 +1,7 @@
-pub mod quick_access;
 pub mod edit_area;
 pub mod file_tree;
 pub mod path_input;
+pub mod quick_access;
 
 // Here are some general functions of updating the ui
 

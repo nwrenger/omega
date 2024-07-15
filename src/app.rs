@@ -5,9 +5,8 @@ use std::{
 };
 
 use crate::ui::{
-    quick_access,
     edit_area::{Cursor, EditArea},
-    update_ui_state,
+    quick_access, update_ui_state,
 };
 use cursive::{
     backends,
