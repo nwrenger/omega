@@ -28,10 +28,10 @@ Because you'll be opening many views, there is a global shortcut `Esc` to close 
 
 ## Bindings
 
-| Global               | Keybinding   |
-| -------------------- | ------------ |
-| Open Quick Access    | `Ctrl` + `p` |
-| Close current view | `Esc`        |
+| Global             | Keybinding   |
+| ------------------ | ------------ |
+| Open Quick Access  | `Ctrl` + `p` |
+| Close current View | `Esc`        |
 
 | Quick Access                   | Command Name |
 | ------------------------------ | ------------ |
