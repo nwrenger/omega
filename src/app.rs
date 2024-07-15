@@ -4,10 +4,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::ui::edit_area::{Cursor, EditArea};
+use crate::ui::{
+    quick_access,
+    edit_area::{Cursor, EditArea},
+    update_ui_state,
+};
 use cursive::{
     backends,
     event::{Event, Key},
+    reexports::log::warn,
     view::{Nameable, Resizable},
     views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
     Vec2,
@@ -18,7 +23,6 @@ use syntect::highlighting::ThemeSet;
 
 use crate::{
     error::ResultExt,
-    events::{self, open_paths},
     ui::file_tree::{self, TreeEntry},
 };
 
@@ -47,7 +51,7 @@ pub struct FileData {
 
 impl State {
     pub fn is_file_edited(&self, path: &PathBuf) -> bool {
-        self.files_edited.get(path).is_some()
+        self.files_edited.contains_key(path)
     }
 
     pub fn is_current_file_edited(&self) -> bool {
@@ -152,28 +156,22 @@ pub fn start() {
         }
     }
 
-    // disable/handle globally
+    // disable/handle global shortcuts
     siv.clear_global_callbacks(Event::CtrlChar('c'));
 
-    siv.clear_global_callbacks(Key::Esc);
     siv.clear_global_callbacks(Event::CtrlChar('p'));
-    siv.clear_global_callbacks(Event::CtrlChar('q'));
-    siv.clear_global_callbacks(Event::CtrlChar('g'));
-    siv.clear_global_callbacks(Event::CtrlChar('o'));
-    siv.clear_global_callbacks(Event::CtrlChar('n'));
-    siv.clear_global_callbacks(Event::CtrlChar('r'));
-    siv.clear_global_callbacks(Event::CtrlChar('d'));
-    siv.clear_global_callbacks(Event::CtrlChar('s'));
+    siv.clear_global_callbacks(Event::Key(Key::Esc));
 
-    siv.add_global_callback(Key::Esc, |s| events::info(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('p'), |s| s.toggle_debug_console());
-    siv.add_global_callback(Event::CtrlChar('q'), |s| events::quit(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('g'), |s| events::goto(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('o'), |s| events::open(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('n'), |s| events::new(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('r'), |s| events::rename(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('d'), |s| events::delete(s).handle(s));
-    siv.add_global_callback(Event::CtrlChar('s'), |s| events::save(s, None).handle(s));
+    siv.add_global_callback(Event::CtrlChar('p'), |s| quick_access::new(s).handle(s));
+    siv.add_global_callback(Event::Key(Key::Esc), |s| {
+        if s.screen().len() > 1 {
+            s.pop_layer();
+        }
+    });
+
+    for _ in 0..1_000 {
+        warn!("All setup!");
+    }
 
     // The current theme, needs to be passed on the general styling and the editor ui for fitting syntax highlighting style.
     let theme = ThemeSet::load_defaults().themes["base16-eighties.dark"].clone();
@@ -289,7 +287,7 @@ pub fn start() {
     siv.add_fullscreen_layer(layout);
 
     // Set initial data.
-    open_paths(&mut siv, &project_path, file_path.as_ref()).unwrap();
+    update_ui_state(&mut siv, &project_path, file_path.as_ref()).unwrap();
 
     // Start event loop.
     siv.run_with(|| backend());
