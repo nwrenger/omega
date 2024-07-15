@@ -1,19 +1,76 @@
+pub mod quick_access;
 pub mod edit_area;
 pub mod file_tree;
 pub mod path_input;
 
 // Here are some general functions of updating the ui
 
-use std::{fs, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use cursive::{Cursive, Vec2};
+use cursive_tree_view::TreeView;
+use file_tree::{load_parent, TreeEntry};
 
 use crate::{
-    app::{EditorPanel, FileData, State},
-    error::Result,
+    app::{EditorPanel, FileData, State, TreePanel},
+    error::{Result, ResultExt},
 };
 
 use self::edit_area::{Cursor, EditArea};
+
+/// Updates the ui accordingly to the paths
+pub fn update_ui_state(
+    siv: &mut Cursive,
+    project_path: &Path,
+    current_file: Option<&PathBuf>,
+) -> Result<()> {
+    let project_path = &project_path.canonicalize().unwrap_or_default();
+    if let Some(current_file) = current_file {
+        open_file(siv, current_file).handle(siv);
+    } else if project_path.exists() {
+        siv.call_on_name("editor", |edit_area: &mut EditArea| {
+            edit_area.set_content(' ');
+            edit_area.set_cursor(Cursor::default());
+            edit_area.set_scroll(Vec2::zero());
+            edit_area.disable();
+        })
+        .unwrap();
+        siv.call_on_name("editor_title", |view: &mut EditorPanel| view.set_title(""))
+            .unwrap();
+    }
+    if project_path.exists() {
+        siv.call_on_name("tree_title", |view: &mut TreePanel| {
+            view.get_inner_mut().set_title(
+                project_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+            );
+        })
+        .unwrap();
+
+        let mut state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap_or_default();
+
+        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
+            load_parent(tree, project_path);
+        });
+
+        siv.set_user_data(state.open_new_project(project_path, current_file));
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "An invalid/not existing directory/file was specified",
+        )
+        .into());
+    }
+
+    Ok(())
+}
 
 /// Open a file, reading from fs if needed, updating title and edit_area content/highlighting, updating state, ...
 pub fn open_file(siv: &mut Cursive, file_to_open: &Path) -> Result<()> {

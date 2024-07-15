@@ -15,7 +15,7 @@ use crate::error::Result;
 /// The name for the EditView is `name` + `"_edit"`, for the SelectView `name` + `"_select"`
 pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
     let view_name = name.clone() + "_edit";
-    let select_name = name.clone() + "_select";
+    let select_name = name + "_select";
 
     let mut select = SelectView::new();
 
@@ -71,7 +71,7 @@ pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
 }
 
 /// Getting all paths by a path with search functionality for incomplete paths.
-fn get_paths(path: &Path, include_files: bool) -> Result<Vec<String>> {
+pub fn get_paths(path: &Path, include_files: bool) -> Result<Vec<String>> {
     let entries_result = fs::read_dir(path);
 
     let (dir_to_read, filter_prefix) = if entries_result.is_err() {

@@ -6,7 +6,6 @@
 pub mod app;
 pub mod clipboard;
 pub mod error;
-pub mod events;
 pub mod ui;
 
 use cursive::logger::reserve_logs;

@@ -16,27 +16,33 @@ This section will guide you through the initial steps of opening the editor. Whe
 
 Within the editor, you'll find a panel on the left side that displays your project's directory structure, allowing for easy navigation through your project files.
 
-Navigating through your project is straightforward: selecting an entry from the left panel will close the currently open file and open the newly selected one. The editor efficiently manages your files by checking if a file is already open and retrieving its data from its current state or loading it from the filesystem to store in the state. All changes to files are temporarily cached in the state, ensuring that unsaved files can be reopened, edited further, and eventually saved, provided the editor remains open. Upon exiting the editor (using `Ctrl` + `q`), it will prompt you to save any unsaved changes.
+Navigating through your project is straightforward: selecting an entry from the left panel will close the currently open file and open the newly selected one. The editor efficiently manages your files by checking if a file is already open and retrieving its data from its current state or loading it from the filesystem to store in the state. All changes to files are temporarily cached in the state, ensuring that unsaved files can be reopened, edited further, and eventually saved, provided the editor remains open. Upon exiting the editor (using `Ctrl` + `p` -> typing `>q` and enter), it will prompt you to save any unsaved changes.
 
 Files that are being edited will be marked with an asterisk `*` in the title bar; saving these files will remove the asterisk.
 
-The editor also offers Global Keybindings for file and directory management tasks, such as adding, editing, and deleting. Please exercise caution when deleting files, as this action is irreversible, with no intermediate trash bin for recovery.
+The editor provides a Quick Access view, accessible with the global shortcut `Ctrl` + `p`. This view displays your currently open files and, by entering command mode with `>`, allows you to perform file and directory management tasks. These tasks include opening a new project, saving the current file, adding, editing, and deleting files, and more, such as opening the info and debugger views. Please exercise caution when deleting files, as this action is irreversible and there is no intermediate trash bin for recovery.
+
+Because you'll be opening many views, there is a global shortcut `Esc` to close the current one.
 
 > Moving the cursor/selector via mouse input, arrow keys and `Tab` is also possible.
 
 ## Bindings
 
-| Global                        | Keybinding   |
-| ----------------------------- | ------------ |
-| Infos                         | `Esc`        |
-| Toggle debugger               | `Ctrl` + `p` |
-| Quitting                      | `Ctrl` + `q` |
-| Goto an already opened File   | `Ctrl` + `g` |
-| Opening a File/Project        | `Ctrl` + `o` |
-| Creating a new File/Directory | `Ctrl` + `n` |
-| Renaming a File/Directory     | `Ctrl` + `r` |
-| Deleting a File/Directory     | `Ctrl` + `d` |
-| Saving File                   | `Ctrl` + `s` |
+| Global               | Keybinding   |
+| -------------------- | ------------ |
+| Open Quick Access    | `Ctrl` + `p` |
+| Close current Dialog | `Esc`        |
+
+| Quick Access                   | Command Name |
+| ------------------------------ | ------------ |
+| Open Debugger                  | `debug`      |
+| Open Infos                     | `info`       |
+| Opening a File/Project         | `open`       |
+| Saving the current opened File | `save`       |
+| Creating a new File/Directory  | `new`        |
+| Renaming a File/Directory      | `rename`     |
+| Deleting a File/Directory      | `delete`     |
+| Quitting                       | `quit`       |
 
 | Editor             | Keybinding                                    |
 | ------------------ | --------------------------------------------- |

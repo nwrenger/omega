@@ -6,26 +6,191 @@ use std::{
 
 use cursive::{
     view::{Nameable, Resizable, Scrollable},
-    views::{Dialog, EditView, LinearLayout, ListView, ScrollView, SelectView, TextView},
-    Cursive, Vec2,
+    views::{
+        DebugView, Dialog, EditView, LinearLayout, ListView, NamedView, ScrollView, SelectView,
+        TextView,
+    },
+    Cursive,
 };
 use cursive_tree_view::TreeView;
 
 use crate::{
     app::{
-        EditorPanel, FileData, State, TreePanel, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE,
-        PKG_NAME, PKG_REPOSITORY, PKG_VERSION,
+        FileData, State, PKG_AUTHORS, PKG_DESCRIPTION, PKG_LICENSE, PKG_NAME, PKG_REPOSITORY,
+        PKG_VERSION,
     },
     error::{Error, Result, ResultExt},
     ui::{
-        edit_area::{Cursor, EditArea},
         file_tree::{load_parent, TreeEntry},
-        open_file, path_input, update_title,
+        open_file, path_input,
     },
 };
 
+use super::{update_title, update_ui_state};
+
+const VARIANTS: &[&str] = &[
+    "info", "debug", "open", "save", "new", "delete", "rename", "quit",
+];
+
+struct Entry {
+    str: String,
+    ty: EntryType,
+}
+
+impl Entry {
+    fn file(str: String) -> Self {
+        Self {
+            str,
+            ty: EntryType::File,
+        }
+    }
+    fn command(str: String) -> Self {
+        Self {
+            str,
+            ty: EntryType::Command,
+        }
+    }
+}
+
+enum EntryType {
+    File,
+    Command,
+}
+
+/// Creates a new Quick Access view
+///
+/// The recent file are visible and can be filtered via the `EditView`.
+/// Typing in a `>` shows you all current commands which are `info`, `open`, `new`, `rename`, and `delete`.
+///
+/// Pressing enter in the `EditView` will auto select the current selected option.
+pub fn new(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("quick_access_view") {
+        siv.screen_mut().remove_layer(pos);
+    } else {
+        let state = siv
+            .with_user_data(|state: &mut State| state.clone())
+            .unwrap();
+        siv.add_layer(
+            Dialog::new()
+                .padding_lrtb(1, 1, 1, 0)
+                .content(
+                    LinearLayout::vertical()
+                        .child(
+                            EditView::new()
+                                .on_edit(on_edit)
+                                .on_submit(on_submit)
+                                .with_name("query"),
+                        )
+                        .child(
+                            SelectView::new()
+                                .with_all(
+                                    search_fn(&state, "")
+                                        .into_iter()
+                                        .map(|f| (f.str.clone(), f)),
+                                )
+                                .on_submit(show_next_window)
+                                .with_name("matches")
+                                .scrollable(),
+                        )
+                        .fixed_height(10),
+                )
+                .dismiss_button("Cancel")
+                .title("Quick Access")
+                .full_width()
+                .with_name("quick_access_view"),
+        );
+    }
+    Ok(())
+}
+
+fn on_edit(siv: &mut Cursive, query: &str, _cursor: usize) {
+    let state = siv
+        .with_user_data(|state: &mut State| state.clone())
+        .unwrap();
+    let matches = search_fn(&state, query);
+    // Update the `matches` view with the filtered array of cities
+    siv.call_on_name("matches", |v: &mut SelectView<Entry>| {
+        v.clear();
+        v.add_all(matches.into_iter().map(|f| (f.str.clone(), f)));
+    });
+}
+
+fn search_fn(state: &State, query: &'_ str) -> Vec<Entry> {
+    if query.chars().next().unwrap_or_default() == '>' {
+        let query = query.get(1..).unwrap_or("");
+        VARIANTS
+            .iter()
+            .copied()
+            .filter(|&item| {
+                let item = item.to_lowercase();
+                let query = query.to_lowercase();
+                item.contains(&query)
+            })
+            .map(|f| Entry::command(f.to_string()))
+            .collect()
+    } else {
+        let mut filtered = state
+            .files
+            .iter()
+            .filter(|p| {
+                p.0.starts_with(&state.project_path) && {
+                    let item = p.0.to_string_lossy().to_lowercase();
+                    let query = query.to_lowercase();
+                    item.contains(&query)
+                }
+            })
+            .collect::<Vec<_>>();
+        filtered.sort_by(|a, b| b.0.cmp(a.0));
+
+        filtered
+            .iter()
+            .map(|f| Entry::file(f.0.to_string_lossy().to_string()))
+            .collect()
+    }
+}
+
+fn on_submit(siv: &mut Cursive, _: &str) {
+    let matches = siv.find_name::<SelectView<Entry>>("matches").unwrap();
+    if !matches.is_empty() {
+        let entry = &*matches.selection().unwrap();
+        show_next_window(siv, entry);
+    };
+}
+
+fn show_next_window(siv: &mut Cursive, entry: &Entry) {
+    match entry.ty {
+        EntryType::File => {
+            let goto_file = &PathBuf::from(entry.str.clone());
+            if let Err(e) = open_file(siv, goto_file) {
+                Into::<Error>::into(e).to_dialog(siv);
+                return;
+            }
+            siv.pop_layer();
+        }
+        EntryType::Command => {
+            siv.pop_layer();
+            run_command(siv, entry.str.clone());
+        }
+    }
+}
+
+fn run_command(siv: &mut Cursive, str: String) {
+    let str = str.as_str();
+    match str {
+        "info" => info(siv).handle(siv),
+        "debug" => debug(siv).handle(siv),
+        "open" => open_project(siv).handle(siv),
+        "save" => save(siv, None).handle(siv),
+        "new" => new_file(siv).handle(siv),
+        "delete" => delete_file(siv).handle(siv),
+        "rename" => rename_file(siv).handle(siv),
+        "quit" => quit(siv).handle(siv),
+        _ => unreachable!(),
+    }
+}
+
 /// Shows all commands
-pub fn info(siv: &mut Cursive) -> Result<()> {
+fn info(siv: &mut Cursive) -> Result<()> {
     if let Some(pos) = siv.screen_mut().find_layer_from_name("info") {
         siv.screen_mut().remove_layer(pos);
     } else {
@@ -51,15 +216,18 @@ pub fn info(siv: &mut Cursive) -> Result<()> {
                         .delimiter()
                         // shortcuts
                         // global
-                        .child("Infos", TextView::new("Esc"))
-                        .child("Debugger", TextView::new("Ctrl + p"))
-                        .child("Quitting", TextView::new("Ctrl + q"))
-                        .child("Goto an already opened File", TextView::new("Ctrl + g"))
-                        .child("Opening a new File/Project", TextView::new("Ctrl + o"))
-                        .child("Creating a new File/Directory", TextView::new("Ctrl + n"))
-                        .child("Renaming a File/Directory", TextView::new("Ctrl + r"))
-                        .child("Deleting a File/Directory", TextView::new("Ctrl + d"))
-                        .child("Saving File", TextView::new("Ctrl + s"))
+                        .child("Open Quick Access", TextView::new("Ctrl + p"))
+                        .child("Close current Dialog", TextView::new("Esc"))
+                        .delimiter()
+                        // quick access commands
+                        .child("Open Debugger", TextView::new("debug"))
+                        .child("Open Infos", TextView::new("info"))
+                        .child("Opening a new File/Project", TextView::new("open"))
+                        .child("Saving the current opened File", TextView::new("save"))
+                        .child("Creating a new File/Directory", TextView::new("new"))
+                        .child("Renaming a File/Directory", TextView::new("rename"))
+                        .child("Deleting a File/Directory", TextView::new("delete"))
+                        .child("Quitting", TextView::new("quit"))
                         .delimiter()
                         // editor
                         .child("Copying Line", TextView::new("Ctrl + c"))
@@ -78,119 +246,23 @@ pub fn info(siv: &mut Cursive) -> Result<()> {
     Ok(())
 }
 
-/// Quits safely the app
-pub fn quit(siv: &mut Cursive) -> Result<()> {
-    let state = siv
-        .with_user_data(|state: &mut State| state.clone())
-        .unwrap();
-
-    let edited_files = state
-        .files_edited
-        .into_iter()
-        .filter(|(_, edited)| *edited)
-        .map(|(path, _)| path)
-        .collect::<Vec<PathBuf>>();
-
-    if edited_files.is_empty() {
-        siv.quit();
+/// Shows debug
+fn debug(siv: &mut Cursive) -> Result<()> {
+    if let Some(pos) = siv.screen_mut().find_layer_from_name("debug") {
+        siv.screen_mut().remove_layer(pos);
     } else {
-        let mut layout =
-            LinearLayout::vertical().child(TextView::new("You have unsaved changes in: "));
-        for i in &edited_files {
-            layout.add_child(TextView::new(i.to_string_lossy()));
-        }
-
-        let edited_files_for_save = edited_files.clone();
         siv.add_layer(
-            Dialog::new()
-                .content(layout)
-                .button("Save", move |siv| {
-                    for i in &edited_files_for_save {
-                        let binding = &FileData::default();
-                        let content = &state.files.get(i).unwrap_or(binding).str;
-                        save(siv, Some((i, content))).handle(siv);
-                    }
-                    siv.quit();
-                })
-                .button("Dismiss", |siv| {
-                    siv.pop_layer();
-                    siv.quit();
-                })
-                .dismiss_button("Cancel Closing"),
+            Dialog::around(
+                ScrollView::new(NamedView::new("debug", DebugView::new())).scroll_x(true),
+            )
+            .padding_lrtb(1, 1, 1, 0)
+            .title("Debug Console")
+            .dismiss_button("Close")
+            .full_width(),
         );
     }
 
     Ok(())
-}
-
-/// Goto an opened file of the current project or more precise a file in
-/// the state.files hashmap which is inside the current project directory
-///
-/// This wont reload any current state just open the current state of the specified file!
-pub fn goto(siv: &mut Cursive) -> Result<()> {
-    if let Some(pos) = siv.screen_mut().find_layer_from_name("goto") {
-        siv.screen_mut().remove_layer(pos);
-        Ok(())
-    } else {
-        let state = siv
-            .with_user_data(|state: &mut State| state.clone())
-            .unwrap();
-
-        let mut filtered = state
-            .files
-            .iter()
-            .filter(|p| p.0.starts_with(&state.project_path))
-            .collect::<Vec<_>>();
-        filtered.sort_by(|a, b| b.0.cmp(a.0));
-
-        let opened = filtered
-            .iter()
-            .filter(|p| p.0.starts_with(&state.project_path))
-            .map(|f| {
-                f.0.canonicalize()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
-            })
-            .collect::<Vec<_>>();
-
-        let selected = opened
-            .iter()
-            .position(|p| {
-                p == &state
-                    .clone()
-                    .current_file
-                    .unwrap_or_default()
-                    .canonicalize()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
-            })
-            .unwrap_or_default();
-
-        siv.add_layer(
-            Dialog::new()
-                .title("Goto")
-                .padding_lrtb(1, 1, 1, 0)
-                .content(ScrollView::new(
-                    SelectView::new()
-                        .with_all_str(&opened)
-                        .on_submit(move |siv, item: &String| {
-                            let goto_file = &PathBuf::from(item);
-                            if let Err(e) = open_file(siv, goto_file) {
-                                Into::<Error>::into(e).to_dialog(siv);
-                                return;
-                            }
-                            siv.pop_layer();
-                        })
-                        .selected(selected),
-                ))
-                .dismiss_button("Cancel")
-                .full_width()
-                .with_name("goto"),
-        );
-        Ok(())
-    }
 }
 
 /// Opens a new file/project
@@ -200,7 +272,7 @@ pub fn goto(siv: &mut Cursive) -> Result<()> {
 /// Also notable is that this will reload state so the current file tree, the preferred way
 /// to move through all your current opened files without using the file tree is using
 /// `goto` (`Ctrl` + `g`)
-pub fn open(siv: &mut Cursive) -> Result<()> {
+fn open_project(siv: &mut Cursive) -> Result<()> {
     if let Some(pos) = siv.screen_mut().find_layer_from_name("open") {
         siv.screen_mut().remove_layer(pos);
         Ok(())
@@ -235,7 +307,7 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
                         return;
                     };
 
-                    if let Err(e) = open_paths(siv, &project_path, current_file.as_ref()) {
+                    if let Err(e) = update_ui_state(siv, &project_path, current_file.as_ref()) {
                         Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
@@ -251,59 +323,45 @@ pub fn open(siv: &mut Cursive) -> Result<()> {
     }
 }
 
-/// Updates the ui accordingly to the paths
-pub fn open_paths(
-    siv: &mut Cursive,
-    project_path: &Path,
-    current_file: Option<&PathBuf>,
-) -> Result<()> {
-    let project_path = &project_path.canonicalize().unwrap_or_default();
-    if let Some(current_file) = current_file {
-        open_file(siv, current_file).handle(siv);
-    } else if project_path.exists() {
-        siv.call_on_name("editor", |edit_area: &mut EditArea| {
-            edit_area.set_content(' ');
-            edit_area.set_cursor(Cursor::default());
-            edit_area.set_scroll(Vec2::zero());
-            edit_area.disable();
-        })
-        .unwrap();
-        siv.call_on_name("editor_title", |view: &mut EditorPanel| view.set_title(""))
-            .unwrap();
-    }
-    if project_path.exists() {
-        siv.call_on_name("tree_title", |view: &mut TreePanel| {
-            view.get_inner_mut().set_title(
-                project_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            );
-        })
+/// Save current progress + Handling Title
+pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()> {
+    let mut state = siv
+        .with_user_data(|state: &mut State| state.clone())
         .unwrap();
 
-        let mut state = siv
-            .with_user_data(|state: &mut State| state.clone())
-            .unwrap_or_default();
+    let binding = FileData::default();
+    let content = &state.get_current_file().unwrap_or(&binding).str;
 
-        siv.call_on_name("tree", |tree: &mut TreeView<TreeEntry>| {
-            load_parent(tree, project_path);
-        });
+    let current_file = state
+        .current_file
+        .as_ref()
+        .map(|current_file| (current_file, content));
 
-        siv.set_user_data(state.open_new_project(project_path, current_file));
+    let data = if let Some(other) = other {
+        Some(other)
     } else {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "An invalid/not existing directory/file was specified",
-        )
-        .into());
-    }
+        current_file
+    };
 
+    if let Some(data) = data {
+        let old_content = fs::read_to_string(data.0)?;
+
+        if &old_content != data.1 {
+            // just write when something really changed
+            fs::write(data.0.clone(), data.1)?;
+        }
+
+        update_title(siv, None, data.0);
+
+        state.files_edited.remove(data.0);
+
+        siv.set_user_data(state);
+    }
     Ok(())
 }
 
 /// Creates a new file
-pub fn new(siv: &mut Cursive) -> Result<()> {
+fn new_file(siv: &mut Cursive) -> Result<()> {
     if let Some(pos) = siv.screen_mut().find_layer_from_name("new") {
         siv.screen_mut().remove_layer(pos);
     } else {
@@ -378,7 +436,7 @@ pub fn new(siv: &mut Cursive) -> Result<()> {
 }
 
 /// Rename(+move) a file/directory
-pub fn rename(siv: &mut Cursive) -> Result<()> {
+fn rename_file(siv: &mut Cursive) -> Result<()> {
     if let Some(pos) = siv.screen_mut().find_layer_from_name("rename") {
         siv.screen_mut().remove_layer(pos);
     } else {
@@ -392,16 +450,9 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
             .child(TextView::new(" "))
             .child(
                 LinearLayout::horizontal()
-                    .child(
-                        LinearLayout::vertical()
-                            .child(TextView::new("From"))
-                            .child(path_input::new(
-                                &state.project_path,
-                                "from_rename_path".to_string(),
-                                true,
-                            )?)
-                            .full_width(),
-                    )
+                    .child(LinearLayout::vertical().child(TextView::new("From")).child(
+                        path_input::new(&state.project_path, "from_rename_path".to_string(), true)?,
+                    ))
                     .child(TextView::new(" "))
                     .child(
                         LinearLayout::vertical()
@@ -453,7 +504,7 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
                     siv.set_user_data(state.clone());
 
                     if let Err(e) =
-                        open_paths(siv, &state.project_path, state.current_file.as_ref())
+                        update_ui_state(siv, &state.project_path, state.current_file.as_ref())
                     {
                         Into::<Error>::into(e).to_dialog(siv);
                         return;
@@ -470,7 +521,7 @@ pub fn rename(siv: &mut Cursive) -> Result<()> {
 }
 
 /// Delete a file/directory(recursively)
-pub fn delete(siv: &mut Cursive) -> Result<()> {
+fn delete_file(siv: &mut Cursive) -> Result<()> {
     if let Some(pos) = siv.screen_mut().find_layer_from_name("delete") {
         siv.screen_mut().remove_layer(pos);
     } else {
@@ -518,7 +569,7 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
                         None
                     };
 
-                    if let Err(e) = open_paths(siv, &state.project_path, current.as_ref()) {
+                    if let Err(e) = update_ui_state(siv, &state.project_path, current.as_ref()) {
                         Into::<Error>::into(e).to_dialog(siv);
                         return;
                     }
@@ -543,39 +594,47 @@ pub fn delete(siv: &mut Cursive) -> Result<()> {
     Ok(())
 }
 
-/// Save current progress + Handling Title
-pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()> {
-    let mut state = siv
+/// Quits safely the app
+pub fn quit(siv: &mut Cursive) -> Result<()> {
+    let state = siv
         .with_user_data(|state: &mut State| state.clone())
         .unwrap();
 
-    let binding = FileData::default();
-    let content = &state.get_current_file().unwrap_or(&binding).str;
+    let edited_files = state
+        .files_edited
+        .into_iter()
+        .filter(|(_, edited)| *edited)
+        .map(|(path, _)| path)
+        .collect::<Vec<PathBuf>>();
 
-    let current_file = state
-        .current_file
-        .as_ref()
-        .map(|current_file| (current_file, content));
-
-    let data = if let Some(other) = other {
-        Some(other)
+    if edited_files.is_empty() {
+        siv.quit();
     } else {
-        current_file
-    };
-
-    if let Some(data) = data {
-        let old_content = fs::read_to_string(data.0)?;
-
-        if &old_content != data.1 {
-            // just write when something really changed
-            fs::write(data.0.clone(), data.1)?;
+        let mut layout =
+            LinearLayout::vertical().child(TextView::new("You have unsaved changes in: "));
+        for i in &edited_files {
+            layout.add_child(TextView::new(i.to_string_lossy()));
         }
 
-        update_title(siv, None, data.0);
-
-        state.files_edited.remove(data.0);
-
-        siv.set_user_data(state);
+        let edited_files_for_save = edited_files.clone();
+        siv.add_layer(
+            Dialog::new()
+                .content(layout)
+                .button("Save", move |siv| {
+                    for i in &edited_files_for_save {
+                        let binding = &FileData::default();
+                        let content = &state.files.get(i).unwrap_or(binding).str;
+                        save(siv, Some((i, content))).handle(siv);
+                    }
+                    siv.quit();
+                })
+                .button("Dismiss", |siv| {
+                    siv.pop_layer();
+                    siv.quit();
+                })
+                .dismiss_button("Cancel Closing"),
+        );
     }
+
     Ok(())
 }
