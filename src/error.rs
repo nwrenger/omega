@@ -19,9 +19,9 @@ impl std::error::Error for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Arguments(e) => write!(f, "Arguments: {e}.\nForce quit via ctrl + f or toggle the goto via ctrl + d"),
-            Error::FileSystem(e) => write!(f, "File System Error: {e}. Check the file path and permissions.\nForce quit via ctrl + f or toggle the goto via ctrl + o"),
-            Error::Clipboard(e) => write!(f, "Clipboard: {e}. Ensure your clipboard manager is running.\nForce quit via ctrl + f or toggle the goto via ctrl + d"),
+            Error::Arguments(e) => write!(f, "Arguments: {e}."),
+            Error::FileSystem(e) => write!(f, "File System Error: {e}."),
+            Error::Clipboard(e) => write!(f, "Clipboard: {e}. Ensure your clipboard manager is running."),
         }
     }
 }
