@@ -252,13 +252,11 @@ fn debug(siv: &mut Cursive) -> Result<()> {
         siv.screen_mut().remove_layer(pos);
     } else {
         siv.add_layer(
-            Dialog::around(
-                ScrollView::new(NamedView::new("debug", DebugView::new())).scroll_x(true),
-            )
-            .padding_lrtb(1, 1, 1, 0)
-            .title("Debug Console")
-            .dismiss_button("Close")
-            .full_width(),
+            Dialog::around(ScrollView::new(NamedView::new("debug", DebugView::new())))
+                .padding_lrtb(1, 1, 1, 0)
+                .title("Debug Console")
+                .dismiss_button("Close")
+                .full_width(),
         );
     }
 
@@ -360,7 +358,7 @@ pub fn save(siv: &mut Cursive, other: Option<(&PathBuf, &String)>) -> Result<()>
     Ok(())
 }
 
-/// Creates a new file
+/// Creates a new file/directory
 fn new_file(siv: &mut Cursive) -> Result<()> {
     if let Some(pos) = siv.screen_mut().find_layer_from_name("new") {
         siv.screen_mut().remove_layer(pos);
@@ -557,9 +555,19 @@ fn delete_file(siv: &mut Cursive) -> Result<()> {
                         return;
                     }
 
-                    state.remove_file(&delete_path);
+                    state.remove(&delete_path);
 
                     siv.set_user_data(state.clone());
+
+                    if state.project_path == delete_path {
+                        siv.pop_layer();
+                        Into::<Error>::into(io::Error::new(
+                            ErrorKind::NotFound,
+                            "Couldn't find project. It got deleted. Open a new project via the Quick Access view",
+                        ))
+                        .to_dialog(siv);
+                        return;
+                    }
 
                     let current = if &delete_path
                         != state.current_file.as_ref().unwrap_or(&PathBuf::default())
@@ -571,16 +579,6 @@ fn delete_file(siv: &mut Cursive) -> Result<()> {
 
                     if let Err(e) = update_ui_state(siv, &state.project_path, current.as_ref()) {
                         Into::<Error>::into(e).to_dialog(siv);
-                        return;
-                    }
-
-                    if state.project_path == delete_path {
-                        siv.pop_layer();
-                        Into::<Error>::into(io::Error::new(
-                            ErrorKind::NotFound,
-                            "Couldn't find project. It got deleted",
-                        ))
-                        .to_dialog(siv);
                         return;
                     }
 

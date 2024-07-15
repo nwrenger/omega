@@ -11,7 +11,7 @@ use crate::ui::{
 use cursive::{
     backends,
     event::{Event, Key},
-    reexports::log::warn,
+    reexports::log::info,
     view::{Nameable, Resizable},
     views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
     Vec2,
@@ -65,12 +65,16 @@ impl State {
         self.get_file(self.current_file.as_ref().unwrap_or(&PathBuf::default()))
     }
 
-    pub fn remove_file(&mut self, path: &PathBuf) {
-        self.files.remove(path);
-        self.files_edited.remove(path);
-        if let Some(current_file) = &self.current_file {
-            if current_file == path {
-                self.current_file = None;
+    pub fn remove(&mut self, path: &PathBuf) {
+        for file_path in self.files.clone().keys() {
+            if file_path.starts_with(path) {
+                self.files.remove(file_path);
+                self.files_edited.remove(file_path);
+                if let Some(current_file) = &self.current_file {
+                    if current_file == file_path {
+                        self.current_file = None;
+                    }
+                }
             }
         }
     }
@@ -167,10 +171,6 @@ pub fn start() {
             s.pop_layer();
         }
     });
-
-    for _ in 0..1_000 {
-        warn!("All setup!");
-    }
 
     // The current theme, needs to be passed on the general styling and the editor ui for fitting syntax highlighting style.
     let theme = ThemeSet::load_defaults().themes["base16-eighties.dark"].clone();
@@ -287,6 +287,8 @@ pub fn start() {
 
     // Set initial data.
     update_ui_state(&mut siv, &project_path, file_path.as_ref()).unwrap();
+
+    info!("App up and running. Initial setup finished!");
 
     // Start event loop.
     siv.run_with(|| backend());

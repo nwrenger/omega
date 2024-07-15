@@ -22,5 +22,5 @@ fn main() {
 fn logging() {
     reserve_logs(1_000);
     log::set_logger(&CursiveLogger).unwrap();
-    log::set_max_level(log::LevelFilter::Warn);
+    log::set_max_level(log::LevelFilter::Info);
 }
