@@ -76,7 +76,6 @@ There are currently some smaller known issues:
 - Performance Issues on scrolling and editing files.
 - If the content only needs a scrollbar on the x-Axis, this scrollbar won't be intractable.
 - `Tabs` are currently not rendered/shown. So some files using `Tabs` could look not like their should.
-- <kbd>&uarr;</kbd>/<kbd>&darr;</kbd>-Input inside the `Edit View` sometimes always moves the scroll, this should only happen if it needs to.
 
 If you're encountering more Bugs please create an `Issue` and if you want to fix one create a `Pull Request` containing the fix.
 

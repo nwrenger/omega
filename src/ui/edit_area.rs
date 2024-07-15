@@ -193,10 +193,6 @@ impl EditArea {
 
         self.cursor = cursor;
 
-        // fix scroll
-        self.scroll_core
-            .scroll_to(Vec2::new(self.cursor.column, self.cursor.row));
-
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
@@ -787,7 +783,7 @@ impl EditArea {
 
     /// Fix a damage located at the cursor.
     ///
-    /// The only damages are assumed to have occured around the cursor.
+    /// The only damages are assumed to have occurred around the cursor.
     ///
     /// This is an optimization to not re-compute the entire rows when an
     /// insert happened.
