@@ -4,7 +4,7 @@ use cursive::{
     reexports::log::error,
     theme::{BaseColor, Color, ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
     utils::{
-        lines::simple::{simple_prefix, LinesIterator, Row},
+        lines::simple::{prefix, simple_prefix, LinesIterator, Row},
         markup::StyledString,
         span::SpannedString,
     },
@@ -390,14 +390,13 @@ impl EditArea {
             return Callback::dummy();
         }
 
+        let x = self.cursor.column;
         let prev_row = self.rows[row_id - 1];
-        let prev_cursor = self.cursor;
-        self.set_byte_offset(
-            prev_row.start
-                + prev_cursor
-                    .column
-                    .clamp(0, prev_row.width.saturating_sub(1)),
-        );
+
+        let prev_text = &self.content[prev_row.start..prev_row.end];
+        let offset = prefix(prev_text.graphemes(true), x, "").length;
+
+        self.set_byte_offset(prev_row.start + offset);
 
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
@@ -408,28 +407,43 @@ impl EditArea {
             return Callback::dummy();
         }
 
+        let x = self.cursor.column;
         let next_row = self.rows[row_id + 1];
-        let prev_cursor = self.cursor;
-        self.set_byte_offset(
-            next_row.start
-                + prev_cursor
-                    .column
-                    .clamp(0, next_row.width.saturating_sub(1)),
-        );
+
+        let next_text = &self.content[next_row.start..next_row.end];
+        let offset = prefix(next_text.graphemes(true), x, "").length;
+
+        self.set_byte_offset(next_row.start + offset);
 
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the left.
     fn move_left(&mut self) -> Callback {
-        self.set_curser_from_byte_offset(self.cursor.byte_offset - 1);
+        let len = {
+            // We don't want to utf8-parse the entire content.
+            // So only consider the last row.
+            let mut row = self.selected_row();
+            if self.rows[row].start == self.cursor.byte_offset {
+                row = row.saturating_sub(1);
+            }
+
+            let text = &self.content[self.rows[row].start..self.cursor.byte_offset];
+            text.graphemes(true).last().unwrap().len()
+        };
+        self.set_curser_from_byte_offset(self.cursor.byte_offset - len);
 
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
     /// Moves the cursor to the right.
     fn move_right(&mut self) -> Callback {
-        self.set_curser_from_byte_offset(self.cursor.byte_offset + 1);
+        let len = self.content[self.cursor.byte_offset..]
+            .graphemes(true)
+            .next()
+            .unwrap()
+            .len();
+        self.set_curser_from_byte_offset(self.cursor.byte_offset + len);
 
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
