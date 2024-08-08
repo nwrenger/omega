@@ -1,6 +1,7 @@
 use cursive::{
     direction::Direction,
     event::{Callback, Event, EventResult, Key, MouseEvent},
+    impl_enabled,
     reexports::log::error,
     theme::{BaseColor, Color, ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
     utils::{
@@ -17,7 +18,7 @@ use cursive::{
 };
 use std::{
     cmp::{max, min},
-    rc::Rc,
+    sync::Arc,
 };
 use syntect::{
     highlighting::Theme,
@@ -49,7 +50,7 @@ use unicode_width::UnicodeWidthStr;
 ///
 /// Arguments are the `Cursive`, current content of the input and cursor
 /// position
-pub type OnChange = dyn Fn(&mut Cursive, &str, Vec2, Cursor);
+pub type OnChange = dyn Fn(&mut Cursive, &str, Vec2, Cursor) + Send + Sync;
 
 /// The cursor offset
 #[derive(Clone, Copy, Debug, Default)]
@@ -64,7 +65,8 @@ pub struct Cursor {
 
 pub struct EditArea {
     // TODO: use a smarter data structure (rope?)
-    content: String,
+    #[allow(clippy::rc_buffer)]
+    content: Arc<String>,
 
     /// Width of the longest line
     max_content_width: usize,
@@ -89,17 +91,17 @@ pub struct EditArea {
     /// Callback when the cursor is moved.
     ///
     /// Will be called with the current content and the cursor position.
-    on_interact: Option<Rc<OnChange>>,
+    on_interact: Option<Arc<OnChange>>,
 
     /// Callback when the content is modified.
     ///
     /// Will be called with the current content and the cursor position.
-    on_scroll: Option<Rc<OnChange>>,
+    on_scroll: Option<Arc<OnChange>>,
 
     /// Callback when the content is modified.
     ///
     /// Will be called with the current content and the cursor position.
-    on_edit: Option<Rc<OnChange>>,
+    on_edit: Option<Arc<OnChange>>,
 
     /// Base for scrolling features
     scroll_core: scroll::Core,
@@ -120,10 +122,12 @@ fn make_rows(text: &str) -> Vec<Row> {
 }
 
 impl EditArea {
+    impl_enabled!(self.enabled);
+
     /// Creates a new, empty EditArea with a specified theme.
     pub fn new(theme: &Theme) -> Self {
         EditArea {
-            content: String::new(),
+            content: Arc::new(String::new()),
             max_content_width: 0,
             rows: Vec::new(),
             syntax: SyntaxSet::load_defaults_newlines(),
@@ -177,8 +181,8 @@ impl EditArea {
     }
 
     /// Returns the `Cursor` in the content string.
-    pub fn cursor(&self) -> Cursor {
-        self.cursor
+    pub fn cursor(&self) -> &Cursor {
+        &self.cursor
     }
 
     /// Moves the cursor to the given position.
@@ -216,7 +220,7 @@ impl EditArea {
 
     /// Sets the content of the view.
     pub fn set_content<S: Into<String>>(&mut self, content: S) -> Callback {
-        self.content = content.into();
+        self.content = content.into().into();
 
         // First, make sure we are within the bounds.
         self.set_curser_from_byte_offset(min(self.cursor.byte_offset, self.content.len()));
@@ -253,39 +257,6 @@ impl EditArea {
             .unwrap_or(self.syntax.find_syntax_plain_text().clone());
     }
 
-    /// Disables this view.
-    ///
-    /// A disabled view cannot be selected.
-    pub fn disable(&mut self) {
-        self.enabled = false;
-    }
-
-    /// Disables this view.
-    ///
-    /// Chainable variant.
-    #[must_use]
-    pub fn disabled(self) -> Self {
-        self.with(Self::disable)
-    }
-
-    /// Re-enables this view.
-    pub fn enable(&mut self) {
-        self.enabled = true;
-    }
-
-    /// Re-enables this view.
-    ///
-    /// Chainable variant.
-    #[must_use]
-    pub fn enabled(self) -> Self {
-        self.with(Self::enable)
-    }
-
-    /// Returns `true` if this view is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
     /// Sets a callback to be called whenever the cursor is modified.
     ///
     /// `callback` will be called with the view
@@ -298,9 +269,9 @@ impl EditArea {
     /// aspect, see [`set_on_interact_mut`](#method.set_on_interact_mut).
     pub fn set_on_interact<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static,
+        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static + Send + Sync,
     {
-        self.on_interact = Some(Rc::new(callback));
+        self.on_interact = Some(Arc::new(callback));
     }
 
     /// Sets a callback to be called whenever the view is scrolled.
@@ -315,9 +286,9 @@ impl EditArea {
     /// aspect, see [`set_on_scroll_mut`](#method.set_on_scroll_mut).
     pub fn set_on_scroll<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static,
+        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static + Send + Sync,
     {
-        self.on_scroll = Some(Rc::new(callback));
+        self.on_scroll = Some(Arc::new(callback));
     }
 
     /// Sets a callback to be called whenever the content is modified.
@@ -332,9 +303,9 @@ impl EditArea {
     /// aspect, see [`set_on_edit_mut`](#method.set_on_edit_mut).
     pub fn set_on_edit<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static,
+        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static + Send + Sync,
     {
-        self.on_edit = Some(Rc::new(callback));
+        self.on_edit = Some(Arc::new(callback));
     }
 
     /// Finds the row containing the grapheme at the given offset
@@ -510,7 +481,7 @@ impl EditArea {
             .len();
         let start = self.cursor.byte_offset;
         let end = start + len;
-        for _ in self.content.drain(start..end) {}
+        for _ in Arc::make_mut(&mut self.content).drain(start..end) {}
 
         let selected_row = self.selected_row();
         if self.cursor.byte_offset == self.rows[selected_row].end {
@@ -534,7 +505,7 @@ impl EditArea {
     fn insert(&mut self, ch: char) -> Callback {
         // First, we inject the data, but keep the cursor unmoved
         // (So the cursor is to the left of the injected char)
-        self.content.insert(self.cursor.byte_offset, ch);
+        Arc::make_mut(&mut self.content).insert(self.cursor.byte_offset, ch);
 
         // Then, we shift the indexes of every row after this one.
         let shift = ch.len_utf8();
@@ -768,7 +739,7 @@ impl EditArea {
     fn on_interact_callback(&self) -> Option<Callback> {
         self.on_interact.clone().map(|cb| {
             // Get a new Rc on the content
-            let content = self.content.clone();
+            let content = Arc::clone(&self.content.clone());
             let scroll_offset = self.scroll_core.content_viewport().top_left();
             let cursor = self.cursor;
 
@@ -779,7 +750,7 @@ impl EditArea {
     }
 
     /// Run any callback after scrolling.
-    fn on_scroll_callback(&mut self) -> Option<Callback> {
+    fn on_scroll_callback(&self) -> Option<Callback> {
         self.on_scroll.clone().map(|cb| {
             // Get a new Rc on the content
             let content = self.content.clone();

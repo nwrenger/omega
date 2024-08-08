@@ -28,13 +28,12 @@ pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
         .unwrap();
         siv.call_on_name(&select_name_clone, |select_view: &mut SelectView| {
             select_view.clear();
-            select_view
-                .add_all_str(&get_paths(&PathBuf::from(new_path), files).unwrap_or_default());
+            select_view.add_all_str(get_paths(&PathBuf::from(new_path), files).unwrap_or_default());
         })
         .unwrap();
     });
 
-    select.add_all_str(&get_paths(path, files).unwrap_or_default());
+    select.add_all_str(get_paths(path, files).unwrap_or_default());
 
     let mut edit_view = EditView::new().content(path.to_string_lossy());
 
@@ -43,7 +42,7 @@ pub fn new(path: &Path, name: String, files: bool) -> Result<LinearLayout> {
         let new_path = PathBuf::from(&new_path);
         siv.call_on_name(&select_name_clone, |view: &mut SelectView| {
             view.clear();
-            view.add_all_str(&get_paths(&new_path, files).unwrap_or_default());
+            view.add_all_str(get_paths(&new_path, files).unwrap_or_default());
         })
         .unwrap();
     });

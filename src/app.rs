@@ -9,14 +9,12 @@ use crate::ui::{
     quick_access, update_ui_state,
 };
 use cursive::{
-    backends,
     event::{Event, Key},
     reexports::log::info,
     view::{Nameable, Resizable},
     views::{LinearLayout, NamedView, Panel, ResizedView, ScrollView},
     Vec2,
 };
-use cursive_buffered_backend::BufferedBackend;
 use cursive_tree_view::TreeView;
 use syntect::highlighting::ThemeSet;
 
@@ -291,23 +289,24 @@ pub fn start() {
     info!("App up and running. Initial setup finished!");
 
     // Start event loop.
-    siv.run_with(|| backend());
+    siv.run();
+    // siv.run_with(|| backend());
 }
 
-/// Initiates a buffered Backend for improved visuals
-///
-/// For linux and windows it uses `crossterm`, for macos it uses `ncurses`
-fn backend() -> Box<BufferedBackend> {
-    #[cfg(not(target_os = "macos"))]
-    {
-        let crossterm_backend = backends::crossterm::Backend::init().unwrap();
-        let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
-        Box::new(buffered_backend)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let ncurses_backend = backends::curses::n::Backend::init().unwrap();
-        let buffered_backend = cursive_buffered_backend::BufferedBackend::new(ncurses_backend);
-        Box::new(buffered_backend)
-    }
-}
+// /// Initiates a buffered Backend for improved visuals
+// ///
+// /// For linux and windows it uses `crossterm`, for macos it uses `ncurses`
+// fn backend() -> Box<BufferedBackend> {
+//     #[cfg(not(target_os = "macos"))]
+//     {
+//         let crossterm_backend = backends::crossterm::Backend::init().unwrap();
+//         let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
+//         Box::new(buffered_backend)
+//     }
+//     #[cfg(target_os = "macos")]
+//     {
+//         let ncurses_backend = backends::curses::n::Backend::init().unwrap();
+//         let buffered_backend = cursive_buffered_backend::BufferedBackend::new(ncurses_backend);
+//         Box::new(buffered_backend)
+//     }
+// }
