@@ -27,9 +27,11 @@ unicode-segmentation = "1.11.0"
 unicode-width = "0.1.11"
 cursive = "0.21.1"
 
-# # cursive dependency cross plattform
+# cursive dependency cross plattform
 # [target.'cfg(target_os = "macos")'.dependencies.cursive]
 # version = "0.21.1"
+# default-features = false
+# features = ["ncurses-backend"]
 
 # [target.'cfg(not(target_os = "macos"))'.dependencies.cursive]
 # version = "0.21.1"

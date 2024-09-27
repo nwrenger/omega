@@ -296,7 +296,7 @@ pub fn start() {
 // /// Initiates a buffered Backend for improved visuals
 // ///
 // /// For linux and windows it uses `crossterm`, for macos it uses `ncurses`
-// fn backend() -> Box<BufferedBackend> {
+// fn backend() -> Box<dyn Backend> {
 //     #[cfg(not(target_os = "macos"))]
 //     {
 //         let crossterm_backend = backends::crossterm::Backend::init().unwrap();
