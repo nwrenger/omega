@@ -1,3 +1,22 @@
+//! Improved Multi-lines text editor.
+//!
+//! A `EditArea` will attempt to grow vertically and horizontally
+//! dependent on the content.  Wrap it in a `ResizedView` to
+//! constrain its size.
+//!
+//! # Examples
+//!
+//! ```
+//! use cursive_core::traits::{Nameable, Resizable};
+//! use cursive_core::views::EditArea;
+//!
+//! let edit_area = EditArea::new()
+//!     .content("Write description here...")
+//!     .with_name("edit_area")
+//!     .fixed_width(30)
+//!     .min_height(5);
+//! ```
+
 use cursive::{
     direction::Direction,
     event::{Callback, Event, EventResult, Key, MouseEvent},
@@ -26,25 +45,6 @@ use syntect::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-
-/// Improved Multi-lines text editor.
-///
-/// A `EditArea` will attempt to grow vertically and horizontally
-/// dependent on the content.  Wrap it in a `ResizedView` to
-/// constrain its size.
-///
-/// # Examples
-///
-/// ```
-/// use cursive_core::traits::{Nameable, Resizable};
-/// use cursive_core::views::EditArea;
-///
-/// let edit_area = EditArea::new()
-///     .content("Write description here...")
-///     .with_name("edit_area")
-///     .fixed_width(30)
-///     .min_height(5);
-/// ```
 
 /// Closure type for callbacks when something happens, for example the content is modified.
 ///
