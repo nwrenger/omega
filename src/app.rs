@@ -293,10 +293,11 @@ pub fn start() {
     // siv.run_with(|| backend());
 }
 
+// Deprecation Notice: cursive_buffered_backend is not up to date
 // /// Initiates a buffered Backend for improved visuals
 // ///
 // /// For linux and windows it uses `crossterm`, for macos it uses `ncurses`
-// fn backend() -> Box<dyn Backend> {
+// fn backend() -> Box<dyn backend::Backend> {
 //     #[cfg(not(target_os = "macos"))]
 //     {
 //         let crossterm_backend = backends::crossterm::Backend::init().unwrap();

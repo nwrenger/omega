@@ -67,7 +67,7 @@ Alternatively, you can download the binary directly from the [releases page](htt
 
 For Linux-based systems, it is necessary to have the `libx11-dev` (Debian/Ubuntu) or `libX11-devel` (Fedora/RHEL) packages installed.
 
-It's important to note that on macOS, `omega` relies on `ncurses` as its backend, which will need to be installed if not already pre-installed. For Linux-based systems and Windows, `omega` uses `crossterm` as its backend.
+It's important to note that on macOS, `omega` relies on `pancurses` as its backend, which will need to be installed if not already pre-installed. For Linux-based systems and Windows, `omega` uses `crossterm` as its backend.
 
 ## Known Issues
 
