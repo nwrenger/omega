@@ -533,18 +533,18 @@ impl EditArea {
 
     /// Copies the line where the cursor currently is
     fn copy(&mut self) {
-        let content = self.get_content().to_string();
-        let cursor_pos = self.cursor().byte_offset;
+        let row = self.content.char_to_line(self.cursor.char_offset);
+        let line_slice = self.content.line(row);
 
-        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
+        let mut copied = line_slice.to_string();
+        if !copied.ends_with('\n') {
+            copied.push('\n');
+        }
 
-        let lines: Vec<&str> = content.split('\n').collect();
-
-        crate::clipboard::set_content(lines[current_line].to_string() + "\n")
-            .unwrap_or_else(|e| error!("{e}"));
+        crate::clipboard::set_content(copied).unwrap_or_else(|e| error!("{e}"));
     }
 
-    /// Pasts the current clipboard
+    /// Pastes the current clipboard at the cursor position.
     fn paste(&mut self) -> Callback {
         let content = self.get_content().to_string();
         let cursor_pos = self.cursor().byte_offset;
