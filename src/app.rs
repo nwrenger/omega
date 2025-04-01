@@ -290,24 +290,4 @@ pub fn start() {
 
     // Start event loop.
     siv.run();
-    // siv.run_with(|| backend());
 }
-
-// Deprecation Notice: cursive_buffered_backend is not up to date
-// /// Initiates a buffered Backend for improved visuals
-// ///
-// /// For linux and windows it uses `crossterm`, for macos it uses `ncurses`
-// fn backend() -> Box<dyn backend::Backend> {
-//     #[cfg(not(target_os = "macos"))]
-//     {
-//         let crossterm_backend = backends::crossterm::Backend::init().unwrap();
-//         let buffered_backend = cursive_buffered_backend::BufferedBackend::new(crossterm_backend);
-//         Box::new(buffered_backend)
-//     }
-//     #[cfg(target_os = "macos")]
-//     {
-//         let ncurses_backend = backends::curses::n::Backend::init().unwrap();
-//         let buffered_backend = cursive_buffered_backend::BufferedBackend::new(ncurses_backend);
-//         Box::new(buffered_backend)
-//     }
-// }

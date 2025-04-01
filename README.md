@@ -12,6 +12,7 @@ A performant and extensive terminal-based project editor with a wide variety of 
 ```bash
 omega [path]
 ```
+
 This section will guide you through the initial steps of opening the editor. When specifying a `path`, if it points to a file, the editor will set the surrounding directory as the project directory. If the `path` points directly to a directory, that directory will become the project directory.
 
 Within the editor, you'll find a panel on the left side that displays your project's directory structure, allowing for easy navigation through your project files.
@@ -44,15 +45,19 @@ Because you'll be opening many views, there is a global shortcut `Esc` to close 
 | Deleting a File/Directory      | `delete`     |
 | Quitting                       | `quit`       |
 
-| Editor             | Keybinding                                    |
-| ------------------ | --------------------------------------------- |
-| Copying Line       | `Ctrl` + `c`                                  |
-| Paste Clipboard    | `Ctrl` + `v`                                  |
-| Cut Line           | `Ctrl` + `x`                                  |
-| Move Line          | `Shift` + <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> |
-| Move Cursor to EoL | `Shift` + <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> |
-| Ident              | `Tab`                                         |
-| Remove Ident       | `Shift` + `Tab`                               |
+| Editor              | Keybinding                                    |
+| ------------------- | --------------------------------------------- |
+| Copying Line        | `Ctrl` + `c`                                  |
+| Paste Clipboard     | `Ctrl` + `v`                                  |
+| Cut Line            | `Ctrl` + `x`                                  |
+| Move Line           | `Shift` + <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> |
+| Move Cursor to EoL  | `Shift` + <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> |
+| Move Cursor 5x Up   | <kbd>Page Up</kbd>                            |
+| Move Cursor 5x Down | <kbd>Page Down</kbd>                          |
+| Move Cursor to SoF  | `Shift` + <kbd>Page Up</kbd>                  |
+| Move Cursor to EoF  | `Shift` + <kbd>Page Down</kbd>                |
+| Ident               | `Tab`                                         |
+| Remove Ident        | `Shift` + `Tab`                               |
 
 ## Installation
 
@@ -61,22 +66,20 @@ To install `omega`, you can use Cargo by running the following command in your t
 ```bash
 cargo install omega
 ```
+
 Alternatively, you can download the binary directly from the [releases page](https://github.com/nwrenger/omega/releases/latest).
 
 ### Additional Requirements
 
 For Linux-based systems, it is necessary to have the `libx11-dev` (Debian/Ubuntu) or `libX11-devel` (Fedora/RHEL) packages installed.
 
-It's important to note that on macOS, `omega` relies on `pancurses` as its backend, which will need to be installed if not already pre-installed. For Linux-based systems and Windows, `omega` uses `crossterm` as its backend.
+It's important to note that `omega` relies on `crossterm` as its backend. Therefore, on macOS you'll need to use a different terminal emulator than the default one for the colors to work properly. A cool open-source example is [kitty](https://sw.kovidgoyal.net/kitty/).
 
 ## Known Issues
 
 There are currently some smaller known issues:
 
-- Performance Issues on scrolling and editing files.
 - If the content only needs a scrollbar on the x-Axis, this scrollbar won't be interactable.
-- `Tabs` are currently not rendered/shown. So some files using `Tabs` could look not like their should.
-- Scrolling on macOS is not working due to a build error with `ncurses-backend`. As a temporary workaround, `pancurses-backend` is being used, where scrolling is non-functional.
 
 If you're encountering more Bugs please create an `Issue` and if you want to fix one create a `Pull Request` containing the fix.
 

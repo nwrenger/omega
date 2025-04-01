@@ -23,18 +23,15 @@ use cursive::{
     impl_enabled,
     reexports::log::error,
     theme::{BaseColor, Color, ColorStyle, Effect, PaletteColor, PaletteStyle, Style},
-    utils::{
-        lines::simple::{prefix, simple_prefix, LinesIterator, Row},
-        markup::StyledString,
-        span::SpannedString,
-    },
-    view::{CannotFocus, SizeCache},
+    utils::{markup::StyledString, span::SpannedString},
+    view::CannotFocus,
     Cursive, Printer, Rect, Vec2, View, With, XY,
 };
 use cursive::{
     impl_scroller,
     view::{scroll, ScrollStrategy},
 };
+use ropey::{Rope, RopeSlice};
 use std::{
     cmp::{max, min},
     sync::Arc,
@@ -50,7 +47,57 @@ use unicode_width::UnicodeWidthStr;
 ///
 /// Arguments are the `Cursive`, current content of the input and cursor
 /// position
-pub type OnChange = dyn Fn(&mut Cursive, &str, Vec2, Cursor) + Send + Sync;
+pub type OnChange = dyn Fn(&mut Cursive, &Rope, Vec2, Cursor) + Send + Sync;
+
+/// Computes how many characters (from the start of `s`) take up at most `max_width` terminal columns.
+fn grapheme_prefix_length(s: &str, max_width: usize) -> usize {
+    let mut current_width = 0;
+    let mut char_count = 0;
+    for grapheme in s.graphemes(true) {
+        let grapheme_width = UnicodeWidthStr::width(grapheme);
+        if current_width + grapheme_width > max_width {
+            break;
+        }
+        current_width += grapheme_width;
+        char_count += grapheme.chars().count();
+    }
+    char_count
+}
+
+/// Swaps `i`-th with `j`-th line in `rope`
+fn swap_lines(rope: &mut Rope, i: usize, j: usize) {
+    if i == j {
+        return;
+    }
+    let orig_num_lines = rope.len_lines();
+    let (i, j) = if i < j { (i, j) } else { (j, i) };
+
+    let start_i = rope.line_to_char(i);
+    let end_i = rope.line_to_char(i + 1);
+    let start_j = rope.line_to_char(j);
+    let end_j = rope.line_to_char(j + 1);
+
+    let line_i = rope.slice(start_i..end_i).to_string();
+    let mut line_j = rope.slice(start_j..end_j).to_string();
+
+    if j == orig_num_lines - 1 && !line_j.ends_with('\n') {
+        line_j.push('\n');
+    }
+
+    rope.remove(start_j..end_j);
+    rope.remove(start_i..end_i);
+
+    rope.insert(start_i, &line_j);
+    rope.insert(start_i + line_j.chars().count(), &line_i);
+}
+
+/// Checks for special character for `grapheme` and returns a displayable version if available.
+fn special_character(grapheme: &str) -> Option<&str> {
+    match grapheme {
+        "\t" => Some("⇥"),
+        _ => None,
+    }
+}
 
 /// The cursor offset
 #[derive(Clone, Copy, Debug, Default)]
@@ -59,22 +106,21 @@ pub struct Cursor {
     pub row: usize,
     /// From left to right
     pub column: usize,
-    /// Byte offset of the currently selected grapheme
+    /// Byte offset of the currently selected text
     pub byte_offset: usize,
+    /// Character offset of the currently selected text
+    pub char_offset: usize,
 }
 
 pub struct EditArea {
-    // TODO: use a smarter data structure (rope?)
-    #[allow(clippy::rc_buffer)]
-    content: Arc<String>,
+    // Content Buffer.
+    content: Rope,
+
+    /// Index of the longest line
+    max_line_index: usize,
 
     /// Width of the longest line
     max_content_width: usize,
-
-    /// Byte offsets within `content` representing text rows
-    ///
-    /// Invariant: never empty.
-    rows: Vec<Row>,
 
     /// Syntax Set
     syntax: SyntaxSet,
@@ -106,20 +152,11 @@ pub struct EditArea {
     /// Base for scrolling features
     scroll_core: scroll::Core,
 
-    /// Cache to avoid re-computing layout on no-op events
-    size_cache: Option<XY<SizeCache>>,
-
     /// Cursor offset view the `struct::Cursor` for further details
     cursor: Cursor,
 }
 
 impl_scroller!(EditArea::scroll_core);
-
-fn make_rows(text: &str) -> Vec<Row> {
-    // Full width, no limits
-    let width = usize::MAX;
-    LinesIterator::new(text, width).show_spaces().collect()
-}
 
 impl EditArea {
     impl_enabled!(self.enabled);
@@ -127,9 +164,9 @@ impl EditArea {
     /// Creates a new, empty EditArea with a specified theme.
     pub fn new(theme: &Theme) -> Self {
         EditArea {
-            content: Arc::new(String::new()),
+            content: Rope::new(),
+            max_line_index: 0,
             max_content_width: 0,
-            rows: Vec::new(),
             syntax: SyntaxSet::load_defaults_newlines(),
             theme: theme.to_owned(),
             synref: SyntaxSet::load_defaults_newlines()
@@ -140,12 +177,9 @@ impl EditArea {
             on_scroll: None,
             on_edit: None,
             scroll_core: scroll::Core::new(),
-            size_cache: None,
             cursor: Cursor::default(),
         }
         .with(|area| {
-            // Make sure we have valid rows, even for empty text.
-            area.compute_rows(Vec2::new(1, 1));
             // Enable scrolling in x direction
             area.scroll_core.set_scroll_x(true);
             area.scroll_core
@@ -156,13 +190,8 @@ impl EditArea {
     }
 
     /// Retrieves the content of the view.
-    pub fn get_content(&self) -> &str {
-        &self.content
-    }
-
-    /// Ensures next layout call re-computes the rows.
-    fn invalidate(&mut self) {
-        self.size_cache = None;
+    pub fn get_content(&self) -> RopeSlice {
+        self.content.slice(..)
     }
 
     /// Returns the current scroll offset.
@@ -200,21 +229,34 @@ impl EditArea {
         self.on_interact_callback().unwrap_or(Callback::dummy())
     }
 
-    /// Sets the `Cursor` from a given byte offset
+    /// Sets the `Cursor` from a given `byte_offset`
+    fn set_cursor_from_char_offset(&mut self, char_offset: usize) -> Callback {
+        let byte_offset = self.content.char_to_byte(char_offset);
+        self.set_cursor(Cursor {
+            row: self.row_at(byte_offset),
+            column: self.col_at(byte_offset),
+            byte_offset,
+            char_offset,
+        })
+    }
+
+    /// Sets the `Cursor` from a given `byte_offset`
     fn set_curser_from_byte_offset(&mut self, byte_offset: usize) -> Callback {
         self.set_cursor(Cursor {
             row: self.row_at(byte_offset),
             column: self.col_at(byte_offset),
             byte_offset,
+            char_offset: self.content.byte_to_char(byte_offset),
         })
     }
 
-    /// Only updates the byte offset
-    fn set_byte_offset(&mut self, byte_offset: usize) -> Callback {
+    /// Only updates the offset from the `byte_offset`
+    fn set_offset(&mut self, byte_offset: usize) -> Callback {
         self.set_cursor(Cursor {
             row: self.cursor.row,
             column: self.cursor.column,
             byte_offset,
+            char_offset: self.content.byte_to_char(byte_offset),
         })
     }
 
@@ -223,18 +265,10 @@ impl EditArea {
         self.content = content.into().into();
 
         // First, make sure we are within the bounds.
-        self.set_curser_from_byte_offset(min(self.cursor.byte_offset, self.content.len()));
+        self.set_curser_from_byte_offset(min(self.cursor.byte_offset, self.content.len_bytes()));
 
-        // We have no guarantee cursor is now at a correct UTF8 location.
-        // So look backward until we find a valid grapheme start.
-        while !self.content.is_char_boundary(self.cursor.byte_offset) {
-            self.set_curser_from_byte_offset(self.cursor.byte_offset - 1);
-        }
-
-        if let Some(size) = self.size_cache.map(|s| s.map(|s| s.value)) {
-            self.invalidate();
-            self.compute_rows(size);
-        }
+        // Recaulcuate the available width.
+        self.compute_max_content_width(None);
 
         self.on_edit_callback().unwrap_or_else(Callback::dummy)
     }
@@ -269,7 +303,7 @@ impl EditArea {
     /// aspect, see [`set_on_interact_mut`](#method.set_on_interact_mut).
     pub fn set_on_interact<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static + Send + Sync,
+        F: Fn(&mut Cursive, &Rope, Vec2, Cursor) + 'static + Send + Sync,
     {
         self.on_interact = Some(Arc::new(callback));
     }
@@ -286,7 +320,7 @@ impl EditArea {
     /// aspect, see [`set_on_scroll_mut`](#method.set_on_scroll_mut).
     pub fn set_on_scroll<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static + Send + Sync,
+        F: Fn(&mut Cursive, &Rope, Vec2, Cursor) + 'static + Send + Sync,
     {
         self.on_scroll = Some(Arc::new(callback));
     }
@@ -303,40 +337,91 @@ impl EditArea {
     /// aspect, see [`set_on_edit_mut`](#method.set_on_edit_mut).
     pub fn set_on_edit<F>(&mut self, callback: F)
     where
-        F: Fn(&mut Cursive, &str, Vec2, Cursor) + 'static + Send + Sync,
+        F: Fn(&mut Cursive, &Rope, Vec2, Cursor) + 'static + Send + Sync,
     {
         self.on_edit = Some(Arc::new(callback));
     }
 
     /// Finds the row containing the grapheme at the given offset
     fn row_at(&self, byte_offset: usize) -> usize {
-        assert!(!self.rows.is_empty());
-        assert!(byte_offset >= self.rows[0].start);
-
-        self.rows
-            .iter()
-            .enumerate()
-            .take_while(|&(_, row)| row.start <= byte_offset)
-            .map(|(i, _)| i)
-            .last()
-            .unwrap()
+        self.content.byte_to_line(byte_offset)
     }
 
     fn col_at(&self, byte_offset: usize) -> usize {
         let row_id = self.row_at(byte_offset);
-        let row = self.rows[row_id];
-        // Number of cells to the left of the cursor
-        self.content[row.start..byte_offset].width()
+        let start = self.content.line_to_char(row_id);
+        let end = self.content.byte_to_char(byte_offset);
+
+        self.content.slice(start..end).len_chars()
     }
 
     /// Finds the row containing the cursor
     fn selected_row(&self) -> usize {
-        assert!(!self.rows.is_empty(), "Rows should never be empty.");
         self.row_at(self.cursor.byte_offset)
     }
 
+    /// Finds the col containing the cursor
     fn selected_col(&self) -> usize {
         self.col_at(self.cursor.byte_offset)
+    }
+
+    /// Calculates the max content width. You can add an `edited_line` to improve performance for large content greatly.
+    fn compute_max_content_width(&mut self, edited_line: Option<usize>) {
+        let num_lines = self.content.len_lines();
+        let line_number_width = num_lines.to_string().len();
+        match edited_line {
+            None => {
+                let (max_line_width, max_index) =
+                    self.content
+                        .lines()
+                        .enumerate()
+                        .fold((0, 0), |(max, idx), (i, line)| {
+                            let w = line.len_chars();
+                            if w > max {
+                                (w, i)
+                            } else {
+                                (max, idx)
+                            }
+                        });
+
+                self.max_content_width = max_line_width + line_number_width + 1;
+                self.max_line_index = max_index;
+            }
+            Some(i) => {
+                let new_width = self.content.line(i).len_chars();
+                let current_max_line_width =
+                    self.max_content_width.saturating_sub(line_number_width + 1);
+                if i == self.max_line_index {
+                    if new_width < current_max_line_width {
+                        let mut candidate = new_width;
+                        let mut candidate_index = i;
+
+                        if i > 0 {
+                            let above = self.content.line(i - 1).len_chars();
+                            if above > candidate {
+                                candidate = above;
+                                candidate_index = i - 1;
+                            }
+                        }
+                        if i + 1 < num_lines {
+                            let below = self.content.line(i + 1).len_chars();
+                            if below > candidate {
+                                candidate = below;
+                                candidate_index = i + 1;
+                            }
+                        }
+
+                        self.max_content_width = candidate + line_number_width + 1;
+                        self.max_line_index = candidate_index;
+                    } else {
+                        self.max_content_width = new_width + line_number_width + 1;
+                    }
+                } else if new_width > current_max_line_width {
+                    self.max_content_width = new_width + line_number_width + 1;
+                    self.max_line_index = i;
+                }
+            }
+        }
     }
 
     fn page_up(&mut self) -> Callback {
@@ -356,113 +441,89 @@ impl EditArea {
     }
 
     fn move_up(&mut self) -> Callback {
-        let row_id = self.selected_row();
-        if row_id == 0 {
+        let current_row = self.selected_row();
+        if current_row == 0 {
             return Callback::dummy();
         }
 
-        let x = self.cursor.column;
-        let prev_row = self.rows[row_id - 1];
+        let prev_line_start = self.content.line_to_char(current_row - 1);
+        let prev_line_end = self.content.line_to_char(current_row);
+        let prev_line_len = prev_line_end - prev_line_start - 1;
 
-        let prev_text = &self.content[prev_row.start..prev_row.end];
-        let offset = prefix(prev_text.graphemes(true), x, "").length;
+        let new_col = min(self.cursor.column, prev_line_len);
+        let new_char_offset = prev_line_start + new_col;
+        let new_byte_offset = self.content.char_to_byte(new_char_offset);
 
-        self.set_byte_offset(prev_row.start + offset);
-
-        self.on_interact_callback().unwrap_or(Callback::dummy())
+        self.set_offset(new_byte_offset)
     }
 
+    // Broken when going to the last linesÏ
     fn move_down(&mut self) -> Callback {
-        let row_id = self.selected_row();
-        if row_id + 1 == self.rows.len() {
+        let current_row = self.selected_row();
+        if current_row + 1 >= self.content.len_lines() {
             return Callback::dummy();
         }
 
-        let x = self.cursor.column;
-        let next_row = self.rows[row_id + 1];
+        let next_line_start = self.content.line_to_char(current_row + 1);
 
-        let next_text = &self.content[next_row.start..next_row.end];
-        let offset = prefix(next_text.graphemes(true), x, "").length;
+        let next_line_end = if current_row + 2 < self.content.len_lines() {
+            self.content.line_to_char(current_row + 2)
+        } else {
+            self.content.len_chars()
+        };
 
-        self.set_byte_offset(next_row.start + offset);
+        let next_line_len = (next_line_end - next_line_start).saturating_sub(1);
+        let new_col = min(self.cursor.column, next_line_len);
+        let new_char_offset = next_line_start + new_col;
+        let new_byte_offset = self.content.char_to_byte(new_char_offset);
 
-        self.on_interact_callback().unwrap_or(Callback::dummy())
+        self.set_offset(new_byte_offset)
     }
 
     /// Moves the cursor to the left.
     fn move_left(&mut self) -> Callback {
-        let len = {
-            // We don't want to utf8-parse the entire content.
-            // So only consider the last row.
-            let mut row = self.selected_row();
-            if self.rows[row].start == self.cursor.byte_offset {
-                row = row.saturating_sub(1);
-            }
-
-            let text = &self.content[self.rows[row].start..self.cursor.byte_offset];
-            text.graphemes(true).last().unwrap().len()
-        };
-        self.set_curser_from_byte_offset(self.cursor.byte_offset - len);
-
-        self.on_interact_callback().unwrap_or(Callback::dummy())
+        if self.cursor.char_offset == 0 {
+            return Callback::dummy();
+        }
+        let new_char_offset = self.cursor.char_offset - 1;
+        let new_byte_offset = self.content.char_to_byte(new_char_offset);
+        self.set_curser_from_byte_offset(new_byte_offset)
     }
 
     /// Moves the cursor to the right.
     fn move_right(&mut self) -> Callback {
-        let len = self.content[self.cursor.byte_offset..]
-            .graphemes(true)
-            .next()
-            .unwrap()
-            .len();
-        self.set_curser_from_byte_offset(self.cursor.byte_offset + len);
-
-        self.on_interact_callback().unwrap_or(Callback::dummy())
+        if self.cursor.char_offset >= self.content.len_chars() {
+            return Callback::dummy();
+        }
+        let new_char_offset = self.cursor.char_offset + 1;
+        let new_byte_offset = self.content.char_to_byte(new_char_offset);
+        self.set_curser_from_byte_offset(new_byte_offset)
     }
 
-    fn is_cache_valid(&self, size: Vec2) -> bool {
-        match self.size_cache {
-            None => false,
-            Some(ref last) => last.x.accept(size.x) && last.y.accept(size.y),
+    /// Moves by the mouse position and scroll offset.
+    fn move_mouse(&mut self, position: XY<usize>, offset: XY<usize>) -> Callback {
+        let content_lines = self.content.len_lines();
+        if content_lines != 0 && position.fits_in_rect(offset, self.scroll_core.inner_size()) {
+            if let Some(position) = position.checked_sub(offset) {
+                let y = min(position.y, content_lines - 1);
+                let x = position
+                    .x
+                    .saturating_sub(content_lines.to_string().len() + 1);
+
+                let row_start = self.content.line_to_char(y);
+                let row_end = if y + 1 < content_lines {
+                    self.content.line_to_char(y + 1).saturating_sub(1)
+                } else {
+                    self.content.len_chars()
+                };
+
+                let content = self.content.slice(row_start..row_end).to_string();
+                let prefix_length = grapheme_prefix_length(&content, x);
+
+                return self.set_cursor_from_char_offset(row_start + prefix_length);
+            }
         }
-    }
-
-    // If we are editing the text, we add a fake "space" character for the
-    // cursor to indicate where the next character will appear.
-    // If the current line is full, adding a character will overflow into the
-    // next line. To show that, we need to add a fake "ghost" row, just for
-    // the cursor.
-    fn fix_ghost_row(&mut self) {
-        if self.rows.is_empty() || self.rows.last().unwrap().end != self.content.len() {
-            // Add a fake, empty row at the end.
-            self.rows.push(Row {
-                start: self.content.len(),
-                end: self.content.len(),
-                width: 0,
-                is_wrapped: false,
-            });
-        }
-    }
-
-    fn compute_max_content_length(&mut self) {
-        self.max_content_width = self.rows.iter().map(|r| r.width).max().unwrap_or(1)
-            + self.rows.len().to_string().len()
-            + 1;
-    }
-
-    fn compute_rows(&mut self, size: Vec2) {
-        if self.is_cache_valid(size) {
-            return;
-        }
-
-        self.rows = make_rows(&self.content);
-        self.fix_ghost_row();
-
-        // also compute here the max content length
-        self.compute_max_content_length();
-
-        if !self.rows.is_empty() {
-            self.size_cache = Some(SizeCache::build(size, size));
-        }
+        Callback::dummy()
     }
 
     fn backspace(&mut self) -> Callback {
@@ -470,70 +531,47 @@ impl EditArea {
         self.delete()
     }
 
+    // Broken when deleting multiline text
     fn delete(&mut self) -> Callback {
-        if self.cursor.byte_offset == self.content.len() {
+        if self.cursor.char_offset >= self.content.len_chars() {
             return Callback::dummy();
         }
-        let len = self.content[self.cursor.byte_offset..]
-            .graphemes(true)
-            .next()
-            .unwrap()
-            .len();
-        let start = self.cursor.byte_offset;
-        let end = start + len;
-        for _ in Arc::make_mut(&mut self.content).drain(start..end) {}
+        let end = self.cursor.char_offset + 1;
+        self.content.remove(self.cursor.char_offset..end);
 
-        let selected_row = self.selected_row();
-        if self.cursor.byte_offset == self.rows[selected_row].end {
-            // We're removing an (implicit) newline.
-            // This means merging two rows.
-            let new_end = self.rows[selected_row + 1].end;
-            self.rows[selected_row].end = new_end;
-            self.rows.remove(selected_row + 1);
-        }
-        self.rows[selected_row].end -= len;
+        // Recaulcuate the available width for the current edited line.
+        let current_line = self.content.char_to_line(self.cursor.char_offset);
+        self.compute_max_content_width(Some(current_line));
 
-        // update all the rows downstream
-        for row in &mut self.rows.iter_mut().skip(1 + selected_row) {
-            row.rev_shift(len);
-        }
-
-        self.fix_damages();
         self.on_edit_callback().unwrap_or_else(Callback::dummy)
     }
 
     fn insert(&mut self, ch: char) -> Callback {
-        // First, we inject the data, but keep the cursor unmoved
-        // (So the cursor is to the left of the injected char)
-        Arc::make_mut(&mut self.content).insert(self.cursor.byte_offset, ch);
+        let old_line = self.content.char_to_line(self.cursor.char_offset);
+        self.content.insert_char(self.cursor.char_offset, ch);
 
         // Then, we shift the indexes of every row after this one.
         let shift = ch.len_utf8();
-
-        // The current row grows, every other is just shifted.
-        let selected_row = self.selected_row();
-        self.rows[selected_row].end += shift;
-
-        for row in &mut self.rows.iter_mut().skip(1 + selected_row) {
-            row.shift(shift);
-        }
 
         // Update cursor
         self.set_curser_from_byte_offset(self.cursor.byte_offset + shift);
 
         // Check if newline char, if true reset the cached column.
+        // Also compute the max_content_width with the old line index.
         if ch == '\n' {
             self.cursor.column = 0;
+            self.compute_max_content_width(Some(old_line));
+        } else {
+            let current_line = self.content.char_to_line(self.cursor.char_offset);
+            self.compute_max_content_width(Some(current_line));
         }
 
-        // Finally, rows may not have the correct width anymore, so fix them.
-        self.fix_damages();
         self.on_edit_callback().unwrap_or_else(Callback::dummy)
     }
 
-    /// Copies the line where the cursor currently is
+    /// Copies the line where the cursor currently is.
     fn copy(&mut self) {
-        let row = self.content.char_to_line(self.cursor.char_offset);
+        let row = self.row_at(self.cursor.byte_offset);
         let line_slice = self.content.line(row);
 
         let mut copied = line_slice.to_string();
@@ -546,200 +584,129 @@ impl EditArea {
 
     /// Pastes the current clipboard at the cursor position.
     fn paste(&mut self) -> Callback {
-        let content = self.get_content().to_string();
-        let cursor_pos = self.cursor().byte_offset;
-
-        let (current_line, cursor_in_line) = Self::get_cursor_line_info(&content, cursor_pos);
-
-        let mut lines: Vec<&str> = content.split('\n').collect();
+        let cursor_pos = self.cursor.char_offset;
         if let Ok(text) = crate::clipboard::get_content() {
-            let split = lines[current_line].split_at(cursor_in_line);
-            let inserted_line = split.0.to_string() + text.as_str() + split.1;
-            lines[current_line] = inserted_line.as_str();
-
-            let new_content: String = lines.join("\n");
-            if new_content != content {
-                self.set_content(new_content);
-                self.set_curser_from_byte_offset(cursor_pos + text.to_string().len());
-                // changed stuff soooo, needing this
-                self.on_edit_callback().unwrap_or(Callback::dummy())
-            } else {
-                Callback::dummy()
-            }
+            self.content.insert(cursor_pos, &text);
+            self.set_cursor_from_char_offset(cursor_pos + text.chars().count());
+            self.on_edit_callback().unwrap_or(Callback::dummy())
         } else {
             Callback::dummy()
         }
     }
 
-    /// Cuts the line where the cursor currently is
+    /// Cuts (copies and removes) the line where the cursor currently is.
     fn cut(&mut self) -> Callback {
-        let content = self.get_content().to_string();
-        let cursor_pos = self.cursor().byte_offset;
+        let row = self.row_at(self.cursor.byte_offset);
 
-        let (current_line, current_line_pos) = Self::get_cursor_line_info(&content, cursor_pos);
-
-        let mut lines: Vec<&str> = content.split('\n').collect();
-        crate::clipboard::set_content(lines[current_line].to_string() + "\n")
-            .unwrap_or_else(|e| error!("{e}"));
-        lines.remove(current_line);
-
-        let new_content: String = lines.join("\n");
-        if new_content != content {
-            self.set_curser_from_byte_offset(cursor_pos - current_line_pos);
-            self.set_content(new_content);
-            // changed stuff soooo, needing this
-            self.on_edit_callback().unwrap_or(Callback::dummy())
-        } else {
-            Callback::dummy()
+        let line_slice = self.content.line(row);
+        let mut line_text = line_slice.to_string();
+        if !line_text.ends_with('\n') {
+            line_text.push('\n');
         }
-    }
 
-    /// Implements the tabulator
-    fn tabulator(&mut self, ident: bool) -> Callback {
-        let content = self.get_content().to_string();
-        let cursor_pos = self.cursor().byte_offset;
+        crate::clipboard::set_content(line_text).unwrap_or_else(|e| error!("{e}"));
 
-        let (current_line, current_line_position) =
-            Self::get_cursor_line_info(&content, cursor_pos);
-        let mut lines: Vec<&str> = content.split('\n').collect();
-        let tab_size = 4;
-
-        let str_to_add = " ".repeat(tab_size);
-
-        let new_content = if ident {
-            let new_line = str_to_add + lines[current_line];
-
-            self.set_curser_from_byte_offset(cursor_pos + tab_size);
-
-            lines[current_line] = &new_line;
-            lines.join("\n")
+        let start = self.content.line_to_char(row);
+        let end = if row + 1 < self.content.len_lines() {
+            self.content.line_to_char(row + 1)
         } else {
-            let new_line = lines[current_line].replacen(&str_to_add, "", 1);
-
-            if lines[current_line] != new_line {
-                self.set_curser_from_byte_offset(cursor_pos - min(current_line_position, tab_size));
-            }
-
-            lines[current_line] = &new_line;
-            lines.join("\n")
+            self.content.len_chars()
         };
-        if new_content != content {
-            self.set_content(new_content);
-            // changed stuff soooo, needing this
-            self.on_edit_callback().unwrap_or(Callback::dummy())
-        } else {
-            Callback::dummy()
-        }
+        self.content.remove(start..end);
+
+        self.set_cursor_from_char_offset(start);
+
+        self.on_edit_callback().unwrap_or(Callback::dummy())
     }
 
-    /// Moves the line withing the cursor in the specified direction
+    /// Implements the tabulator. If `ident` is true, insert (indent) a tab;
+    /// otherwise, remove (unindent) a tab if present.
+    fn tabulator(&mut self, ident: bool) -> Callback {
+        let row = self.row_at(self.cursor.byte_offset);
+        let line_start = self.content.line_to_char(row);
+        let line_end = if row + 1 < self.content.len_lines() {
+            self.content.line_to_char(row + 1)
+        } else {
+            self.content.len_chars()
+        };
+
+        let line_text = self.content.slice(line_start..line_end).to_string();
+        let tab_size = 4;
+        let tab_str = " ".repeat(tab_size);
+        let new_line_text = if ident {
+            format!("{}{}", tab_str, line_text)
+        } else if line_text.starts_with(&tab_str) {
+            line_text[tab_size..].to_string()
+        } else {
+            line_text.clone()
+        };
+
+        if new_line_text != line_text {
+            self.content.remove(line_start..line_end);
+            self.content.insert(line_start, &new_line_text);
+
+            let current_offset = self.cursor.char_offset - line_start;
+            let new_offset = if ident {
+                current_offset + tab_size
+            } else {
+                current_offset.saturating_sub(tab_size)
+            };
+            self.set_cursor_from_char_offset(line_start + new_offset);
+        }
+
+        self.on_edit_callback().unwrap_or(Callback::dummy())
+    }
+
+    /// Moves the line containing the cursor up or down.
     fn move_line(&mut self, direction: Key) -> Callback {
-        let content = self.get_content().to_string();
-        let cursor_pos = self.cursor().byte_offset;
-
-        let (current_line, cursor_in_line) = Self::get_cursor_line_info(&content, cursor_pos);
-
-        let mut lines: Vec<&str> = content.split('\n').collect();
+        let num_lines = self.content.len_lines();
+        let current_line = self.row_at(self.cursor.byte_offset);
 
         if (current_line == 0 && direction == Key::Up)
-            || (current_line == lines.len() - 1 && direction == Key::Down)
+            || (current_line == num_lines - 1 && direction == Key::Down)
         {
             return Callback::dummy();
         }
 
-        let line_to_move = lines.remove(current_line);
-        match direction {
-            Key::Up => lines.insert(current_line - 1, line_to_move),
-            Key::Down => lines.insert(current_line + 1, line_to_move),
-            _ => {}
-        }
-
-        let new_cursor_pos = if direction == Key::Up && current_line > 0 {
-            lines
-                .iter()
-                .take(current_line - 1)
-                .map(|line| line.len() + 1)
-                .sum::<usize>()
-                + cursor_in_line
+        let target_line = if direction == Key::Up {
+            current_line - 1
         } else {
-            lines
-                .iter()
-                .take(current_line + (if direction == Key::Down { 1 } else { 0 }))
-                .map(|line| line.len() + 1)
-                .sum::<usize>()
-                + cursor_in_line
+            current_line + 1
         };
 
-        self.set_curser_from_byte_offset(new_cursor_pos);
+        let current_start = self.content.line_to_char(current_line);
+        let cursor_in_line = self.cursor.char_offset - current_start;
 
-        let new_content: String = lines.join("\n");
-        if new_content != content {
-            self.set_content(new_content);
-            // changed stuff soooo, needing this
-            self.on_edit_callback().unwrap_or(Callback::dummy())
-        } else {
-            Callback::dummy()
-        }
+        swap_lines(&mut self.content, current_line, target_line);
+
+        let new_line_start = self.content.line_to_char(target_line);
+        let new_cursor_pos = new_line_start + cursor_in_line;
+        self.set_cursor_from_char_offset(new_cursor_pos);
+
+        self.on_edit_callback().unwrap_or(Callback::dummy())
     }
 
-    /// Move cursor to the start or end of the current line
+    /// Moves the cursor to the start or end of the current line.
+    /// For left, moves to the beginning; for right, to the last character (before newline).
     fn move_cursor_end(&mut self, direction: Key) -> Callback {
-        let content = self.get_content().to_string();
-        let cursor_pos = self.cursor().byte_offset;
-
-        let (current_line, _) = Self::get_cursor_line_info(&content, cursor_pos);
-
-        let lines: Vec<&str> = content.split('\n').collect();
+        let row = self.row_at(self.cursor.byte_offset);
+        let line_start = self.content.line_to_char(row);
+        let line_end = if row + 1 < self.content.len_lines() {
+            // Subtracting 1 for getting the current line end
+            self.content.line_to_char(row + 1).saturating_sub(1)
+        } else {
+            self.content.len_chars()
+        };
         match direction {
-            Key::Left => {
-                let new_cursor_pos = lines
-                    .iter()
-                    .take(current_line)
-                    .map(|line| line.len() + 1)
-                    .sum::<usize>();
-                self.set_curser_from_byte_offset(new_cursor_pos)
-            }
-            Key::Right => {
-                let new_cursor_pos = if current_line < lines.len() {
-                    lines
-                        .iter()
-                        .take(current_line + 1)
-                        .map(|line| line.len() + 1)
-                        .sum::<usize>()
-                        - 1
-                } else {
-                    content.len()
-                };
-                self.set_curser_from_byte_offset(new_cursor_pos)
-            }
+            Key::Left => self.set_cursor_from_char_offset(line_start),
+            Key::Right => self.set_cursor_from_char_offset(line_end),
             _ => Callback::dummy(),
         }
     }
 
-    /// Returns the current line number and the cursor's position within that line
-    fn get_cursor_line_info(content: &str, cursor_pos: usize) -> (usize, usize) {
-        let lines: Vec<&str> = content.split('\n').collect();
-        let mut current_line = 0;
-        let mut cursor_in_line = 0;
-        let mut count = 0;
-
-        for (i, line) in lines.iter().enumerate() {
-            let line_len = line.len() + 1;
-            if count + line_len > cursor_pos {
-                current_line = i;
-                cursor_in_line = cursor_pos - count;
-                break;
-            }
-            count += line_len;
-        }
-
-        (current_line, cursor_in_line)
-    }
-
     fn on_interact_callback(&self) -> Option<Callback> {
         self.on_interact.clone().map(|cb| {
-            // Get a new Rc on the content
-            let content = Arc::clone(&self.content.clone());
+            let content = self.content.clone();
             let scroll_offset = self.scroll_core.content_viewport().top_left();
             let cursor = self.cursor;
 
@@ -752,7 +719,6 @@ impl EditArea {
     /// Run any callback after scrolling.
     fn on_scroll_callback(&self) -> Option<Callback> {
         self.on_scroll.clone().map(|cb| {
-            // Get a new Rc on the content
             let content = self.content.clone();
             let scroll_offset = self.scroll_core.content_viewport().top_left();
             let cursor = self.cursor;
@@ -765,7 +731,6 @@ impl EditArea {
 
     fn on_edit_callback(&self) -> Option<Callback> {
         self.on_edit.clone().map(|cb| {
-            // Get a new Rc on the content
             let content = self.content.clone();
             let scroll_offset = self.scroll_core.content_viewport().top_left();
             let cursor = self.cursor;
@@ -774,64 +739,6 @@ impl EditArea {
                 cb(s, &content, scroll_offset, cursor);
             })
         })
-    }
-
-    /// Fix a damage located at the cursor.
-    ///
-    /// The only damages are assumed to have occurred around the cursor.
-    ///
-    /// This is an optimization to not re-compute the entire rows when an
-    /// insert happened.
-    fn fix_damages(&mut self) {
-        if self.size_cache.is_none() {
-            // If we don't know our size, we'll get a layout command soon.
-            // So no need to do that here.
-            return;
-        }
-
-        let size = self.size_cache.unwrap().map(|s| s.value);
-
-        // Find affected text.
-        // We know the damage started at this row, so it'll need to go.
-        //
-        // Actually, if possible, also re-compute the previous row.
-        // Indeed, the previous row may have been cut short, and if we now
-        // break apart a big word, maybe the first half can go up one level.
-        let first_row = self.selected_row().saturating_sub(1);
-
-        let first_byte = self.rows[first_row].start;
-
-        // We don't need to go beyond a newline.
-        // If we don't find one, end of the text it is.
-        let last_byte = self.content[self.cursor.byte_offset..]
-            .find('\n')
-            .map(|i| 1 + i + self.cursor.byte_offset);
-        let last_row = last_byte.map_or(self.rows.len(), |last_byte| self.row_at(last_byte));
-        let last_byte = last_byte.unwrap_or(self.content.len());
-
-        let scrollable = self.rows.len() > size.y;
-        // First attempt, if scrollbase status didn't change.
-        let new_rows = make_rows(&self.content[first_byte..last_byte]);
-        // How much did this add?
-        let new_row_count = self.rows.len() + new_rows.len() + first_row - last_row;
-        if !scrollable && new_row_count > size.y {
-            // We just changed scrollable status.
-            // This changes everything.
-            // TODO: compute_rows() currently makes a scroll-less attempt.
-            // Here, we know it's just no gonna happen.
-            self.invalidate();
-            self.compute_rows(size);
-            return;
-        }
-
-        // Otherwise, replace stuff.
-        let affected_rows = first_row..last_row;
-        let replacement_rows = new_rows.into_iter().map(|row| row.shifted(first_byte));
-        self.rows.splice(affected_rows, replacement_rows);
-        // other fix
-        self.fix_ghost_row();
-        // also compute the max length, that could have changed
-        self.compute_max_content_length();
     }
 
     // Events inside the text field
@@ -850,25 +757,8 @@ impl EditArea {
             Event::Key(Key::Backspace) if self.cursor.byte_offset > 0 => {
                 return EventResult::Consumed(Some(self.backspace()));
             }
-            Event::Key(Key::Del) if self.cursor.byte_offset < self.content.len() => {
+            Event::Key(Key::Del) if self.cursor.byte_offset < self.content.len_bytes() => {
                 return EventResult::Consumed(Some(self.delete()));
-            }
-            Event::Key(Key::End) => {
-                let row = self.selected_row();
-                self.set_curser_from_byte_offset(self.rows[row].end);
-                if row + 1 < self.rows.len() && self.cursor.byte_offset == self.rows[row + 1].start
-                {
-                    self.move_left();
-                }
-            }
-            Event::Ctrl(Key::Home) => {
-                self.set_curser_from_byte_offset(0);
-            }
-            Event::Ctrl(Key::End) => {
-                self.set_curser_from_byte_offset(self.content.len());
-            }
-            Event::Key(Key::Home) => {
-                self.set_curser_from_byte_offset(self.rows[self.selected_row()].start);
             }
             Event::Key(Key::Up) => {
                 if self.selected_row() > 0 {
@@ -876,15 +766,9 @@ impl EditArea {
                 }
             }
             Event::Key(Key::Down) => {
-                if self.selected_row() + 1 < self.rows.len() {
+                if self.selected_row() + 1 < self.content.len_lines() {
                     return EventResult::Consumed(Some(self.move_down()));
                 }
-            }
-            Event::Key(Key::PageUp) => {
-                return EventResult::Consumed(Some(self.page_up()));
-            }
-            Event::Key(Key::PageDown) => {
-                return EventResult::Consumed(Some(self.page_down()));
             }
             Event::Key(Key::Left) => {
                 if self.cursor.byte_offset > 0 {
@@ -892,31 +776,36 @@ impl EditArea {
                 }
             }
             Event::Key(Key::Right) => {
-                if self.cursor.byte_offset < self.content.len() {
+                if self.cursor.byte_offset < self.content.len_bytes() {
                     return EventResult::Consumed(Some(self.move_right()));
                 }
+            }
+            Event::Shift(Key::Left) => {
+                return EventResult::Consumed(Some(self.move_cursor_end(Key::Left)));
+            }
+            Event::Shift(Key::Right) => {
+                return EventResult::Consumed(Some(self.move_cursor_end(Key::Right)));
+            }
+            Event::Key(Key::PageUp) => {
+                return EventResult::Consumed(Some(self.page_up()));
+            }
+            Event::Key(Key::PageDown) => {
+                return EventResult::Consumed(Some(self.page_down()));
+            }
+            Event::Shift(Key::PageUp) => {
+                return EventResult::Consumed(Some(self.set_curser_from_byte_offset(0)));
+            }
+            Event::Shift(Key::PageDown) => {
+                return EventResult::Consumed(Some(
+                    self.set_curser_from_byte_offset(self.content.len_bytes()),
+                ));
             }
             Event::Mouse {
                 event: MouseEvent::Press(_),
                 position,
                 offset,
             } => {
-                if !self.rows.is_empty()
-                    && position.fits_in_rect(offset, self.scroll_core.inner_size())
-                {
-                    if let Some(position) = position.checked_sub(offset) {
-                        let y = position.y;
-                        let y = min(y, self.rows.len() - 1);
-                        let x = position
-                            .x
-                            .saturating_sub(self.rows.len().to_string().len() + 1);
-                        let row = &self.rows[y];
-                        let content = &self.content[row.start..row.end];
-                        return EventResult::Consumed(Some(self.set_curser_from_byte_offset(
-                            row.start + simple_prefix(content, x).length,
-                        )));
-                    }
-                }
+                return EventResult::Consumed(Some(self.move_mouse(position, offset)));
             }
             Event::CtrlChar('c') => self.copy(),
             Event::CtrlChar('v') => {
@@ -930,12 +819,6 @@ impl EditArea {
             }
             Event::Shift(Key::Down) => {
                 return EventResult::Consumed(Some(self.move_line(Key::Down)));
-            }
-            Event::Shift(Key::Left) => {
-                return EventResult::Consumed(Some(self.move_cursor_end(Key::Left)));
-            }
-            Event::Shift(Key::Right) => {
-                return EventResult::Consumed(Some(self.move_cursor_end(Key::Right)));
             }
             Event::Key(Key::Tab) => {
                 return EventResult::Consumed(Some(self.tabulator(true)));
@@ -953,28 +836,28 @@ impl EditArea {
     fn inner_required_size(&mut self, vec: Vec2) -> Vec2 {
         Vec2::new(
             max(self.max_content_width + 1, vec.x),
-            // max(self.rows.len(), vec.y)
-            self.rows.len(),
+            self.content.len_lines(),
         )
     }
 
     fn inner_important_area(&self, _: Vec2) -> Rect {
         // The important area is a single character
-        let char_width = if self.cursor.byte_offset >= self.content.len() {
+        let char_width = if self.cursor.char_offset >= self.content.len_chars() {
             // If we're are the end of the content, it'll be a space
             1
         } else {
             // Otherwise it's the selected grapheme
-            self.content[self.cursor.byte_offset..]
-                .graphemes(true)
-                .next()
-                .unwrap()
-                .width()
+            let start = self.cursor.char_offset;
+            let end = start + 1;
+            self.content.slice(start..end).len_chars()
         };
 
         Rect::from_size(
             Vec2::new(self.selected_col(), self.selected_row()),
-            (char_width + self.rows.len().to_string().len() + 2, 1),
+            (
+                char_width + self.content.len_lines().to_string().len() + 2,
+                1,
+            ),
         )
     }
 }
@@ -983,8 +866,8 @@ impl View for EditArea {
     fn draw(&self, printer: &Printer) {
         printer.with_style(PaletteStyle::Primary, |printer| {
             scroll::draw_lines(self, printer, |edit_area, printer, i| {
-                let row = &edit_area.rows[i];
-                let text = edit_area.content[row.start..row.end].to_string();
+                let row_start = self.content.line_to_byte(i);
+                let text = edit_area.content.line(i).to_string();
 
                 let mut highlighter =
                     syntect::easy::HighlightLines::new(&edit_area.synref, &edit_area.theme);
@@ -995,7 +878,7 @@ impl View for EditArea {
                 // Check if file needs to be numbered.
                 let numbering = if printer.enabled && edit_area.enabled {
                     // Calculate max digits for better visual representation.
-                    let max_lines_count_digits = edit_area.rows.len().to_string().len();
+                    let max_lines_count_digits = edit_area.content.len_lines().to_string().len();
 
                     let line_number = format!("{:width$} ", i + 1, width = max_lines_count_digits);
 
@@ -1013,13 +896,31 @@ impl View for EditArea {
 
                 let mut x = 0;
                 for span in line.spans() {
-                    printer.with_style(
-                        ColorStyle::new(span.attr.color.front, PaletteColor::Background),
-                        |printer| {
-                            printer.print((x, 0), span.content);
-                            x += span.content.width();
-                        },
-                    );
+                    let span_text = span.content;
+                    let span_style = span.attr.color.front;
+                    for grapheme in span_text.graphemes(true) {
+                        // Check for special characters and print faded.
+                        if let Some(special) = special_character(grapheme) {
+                            printer.with_style(
+                                ColorStyle::new(
+                                    Color::Light(BaseColor::Black),
+                                    PaletteColor::Background,
+                                ),
+                                |printer| {
+                                    printer.print((x, 0), special);
+                                },
+                            );
+                            x += 1;
+                        } else {
+                            printer.with_style(
+                                ColorStyle::new(span_style, PaletteColor::Background),
+                                |printer| {
+                                    printer.print((x, 0), grapheme);
+                                },
+                            );
+                            x += UnicodeWidthStr::width(grapheme);
+                        }
+                    }
                 }
 
                 if printer.focused
@@ -1027,16 +928,20 @@ impl View for EditArea {
                     && printer.enabled
                     && edit_area.enabled
                 {
-                    let cursor_offset = edit_area.cursor.byte_offset - row.start;
+                    let cursor_offset = edit_area.cursor.byte_offset - row_start;
                     let mut c = StyledString::new();
-                    let selected_char = if cursor_offset == text.len() {
+                    let mut selected_char = if cursor_offset == text.len()
+                        || (text[cursor_offset..].contains("\n")
+                            && cursor_offset == text.len().saturating_sub(1))
+                    {
                         " "
                     } else {
-                        text[cursor_offset..]
-                            .graphemes(true)
-                            .next()
-                            .expect("Found no char!")
+                        text[cursor_offset..].graphemes(true).next().unwrap_or(" ")
                     };
+                    // Check for special characters and overwrite selected_char accordingly.
+                    if let Some(special) = special_character(selected_char) {
+                        selected_char = special;
+                    }
                     c.append_styled(selected_char, Style::primary().combine(Effect::Reverse));
                     let offset = text[..cursor_offset].width() + numbering.width();
                     printer.print_styled((offset, 0), &c);

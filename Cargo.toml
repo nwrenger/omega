@@ -1,6 +1,6 @@
 [package]
 name = "omega"
-version = "0.4.4"
+version = "0.5.0"
 repository = "https://github.com/nwrenger/omega"
 documentation = "https://github.com/nwrenger/omega"
 readme = "README.md"
@@ -20,19 +20,10 @@ strip = true
 
 [dependencies]
 arboard = "3.4.1"
+cursive = "0.21.1"
 cursive-syntect = "0.2.0"
 cursive_tree_view = "0.9.0"
+ropey = "1.6.1"
 syntect = "5.2.0"
 unicode-segmentation = "1.12.0"
 unicode-width = "0.2.0"
-
-# cursive dependency cross plattform
-[target.'cfg(target_os = "macos")'.dependencies.cursive]
-version = "0.21.1"
-default-features = false
-features = ["pancurses-backend"]
-
-[target.'cfg(not(target_os = "macos"))'.dependencies.cursive]
-version = "0.21.1"
-default-features = false
-features = ["crossterm-backend"]

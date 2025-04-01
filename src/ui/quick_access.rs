@@ -235,6 +235,10 @@ fn info(siv: &mut Cursive) -> Result<()> {
                         .child("Cut Line", TextView::new("Ctrl + x"))
                         .child("Move Line", TextView::new("Shift + Up/Down"))
                         .child("Move Cursor to EoL", TextView::new("Shift + Left/Right"))
+                        .child("Move Cursor 5x Up", TextView::new("Page Up"))
+                        .child("Move Cursor 5x Down", TextView::new("Page Down"))
+                        .child("Move Cursor to SoF", TextView::new("Shift + Page Up"))
+                        .child("Move Cursor to EoF", TextView::new("Shift + Page Down"))
                         .child("Ident", TextView::new("Tab"))
                         .child("Remove Ident", TextView::new("Shift + Tab"))
                         .scrollable()
@@ -620,17 +624,23 @@ pub fn quit(siv: &mut Cursive) -> Result<()> {
     if edited_files.is_empty() {
         siv.quit();
     } else {
-        let mut layout =
-            LinearLayout::vertical().child(TextView::new("You have unsaved changes in: "));
-        for i in &edited_files {
-            layout.add_child(TextView::new(i.to_string_lossy()));
+        let mut layout = LinearLayout::vertical()
+            .child(TextView::new("Save the changes in the files below?"))
+            .child(TextView::new(" "));
+        for (i, p) in edited_files.iter().enumerate() {
+            layout.add_child(TextView::new(format!(
+                "{}. \"{}\"",
+                i + 1,
+                p.to_string_lossy()
+            )));
         }
 
         let edited_files_for_save = edited_files.clone();
         siv.add_layer(
             Dialog::new()
+                .title("Unsaved Changes")
                 .content(layout)
-                .button("Save", move |siv| {
+                .button("Yes", move |siv| {
                     for i in &edited_files_for_save {
                         let binding = &FileData::default();
                         let content = &state.files.get(i).unwrap_or(binding).str;
@@ -638,11 +648,11 @@ pub fn quit(siv: &mut Cursive) -> Result<()> {
                     }
                     siv.quit();
                 })
-                .button("Dismiss", |siv| {
+                .button("No", |siv| {
                     siv.pop_layer();
                     siv.quit();
                 })
-                .dismiss_button("Cancel Closing"),
+                .dismiss_button("Cancel"),
         );
     }
 
