@@ -37,6 +37,7 @@ use std::{
     sync::Arc,
 };
 use syntect::{
+    easy::HighlightLines,
     highlighting::Theme,
     parsing::{SyntaxReference, SyntaxSet},
 };
@@ -122,14 +123,14 @@ pub struct EditArea {
     /// Width of the longest line
     max_content_width: usize,
 
+    /// Specified through file extension, the applied highlighting
+    synref: SyntaxReference,
+
     /// Syntax Set
     syntax: SyntaxSet,
 
     /// Current Theme for highlighting
     theme: Theme,
-
-    /// Specified through file extension, the applied highlighting
-    synref: SyntaxReference,
 
     /// When `false`, we don't take any input.
     enabled: bool,
@@ -163,15 +164,14 @@ impl EditArea {
 
     /// Creates a new, empty EditArea with a specified theme.
     pub fn new(theme: &Theme) -> Self {
+        let syntax = SyntaxSet::load_defaults_newlines();
         EditArea {
             content: Rope::new(),
             max_line_index: 0,
             max_content_width: 0,
-            syntax: SyntaxSet::load_defaults_newlines(),
-            theme: theme.to_owned(),
-            synref: SyntaxSet::load_defaults_newlines()
-                .find_syntax_plain_text()
-                .clone(),
+            synref: syntax.find_syntax_plain_text().clone(),
+            syntax,
+            theme: theme.clone(),
             enabled: true,
             on_interact: None,
             on_scroll: None,
@@ -367,58 +367,49 @@ impl EditArea {
 
     /// Calculates the max content width. You can add an `edited_line` to improve performance for large content greatly.
     fn compute_max_content_width(&mut self, edited_line: Option<usize>) {
-        let num_lines = self.content.len_lines();
-        let line_number_width = num_lines.to_string().len();
+        let line_count = self.content.len_lines();
+        let line_number_width = line_count.to_string().len();
+
+        // Helper that adds the line-number column width to a raw line width:
+        let compute_width = |raw_width| raw_width + line_number_width + 1;
+
+        /// Helper that fully scans all lines to find the max line width and its index:
+        fn full_scan(content: &Rope) -> (usize, usize) {
+            content
+                .lines()
+                .enumerate()
+                .fold((0, 0), |(max_width, max_idx), (i, line)| {
+                    let width = line.len_chars();
+                    if width > max_width {
+                        (width, i)
+                    } else {
+                        (max_width, max_idx)
+                    }
+                })
+        }
+
         match edited_line {
             None => {
-                let (max_line_width, max_index) =
-                    self.content
-                        .lines()
-                        .enumerate()
-                        .fold((0, 0), |(max, idx), (i, line)| {
-                            let w = line.len_chars();
-                            if w > max {
-                                (w, i)
-                            } else {
-                                (max, idx)
-                            }
-                        });
-
-                self.max_content_width = max_line_width + line_number_width + 1;
+                let (max_line_width, max_index) = full_scan(&self.content);
                 self.max_line_index = max_index;
+                self.max_content_width = compute_width(max_line_width);
             }
-            Some(i) => {
-                let new_width = self.content.line(i).len_chars();
-                let current_max_line_width =
+            Some(line_idx) => {
+                let new_line_width = self.content.line(line_idx).len_chars();
+                let old_max_line_width =
                     self.max_content_width.saturating_sub(line_number_width + 1);
-                if i == self.max_line_index {
-                    if new_width < current_max_line_width {
-                        let mut candidate = new_width;
-                        let mut candidate_index = i;
 
-                        if i > 0 {
-                            let above = self.content.line(i - 1).len_chars();
-                            if above > candidate {
-                                candidate = above;
-                                candidate_index = i - 1;
-                            }
-                        }
-                        if i + 1 < num_lines {
-                            let below = self.content.line(i + 1).len_chars();
-                            if below > candidate {
-                                candidate = below;
-                                candidate_index = i + 1;
-                            }
-                        }
-
-                        self.max_content_width = candidate + line_number_width + 1;
-                        self.max_line_index = candidate_index;
+                if line_idx == self.max_line_index {
+                    if new_line_width >= old_max_line_width {
+                        self.max_content_width = compute_width(new_line_width);
                     } else {
-                        self.max_content_width = new_width + line_number_width + 1;
+                        let (max_line_width, max_index) = full_scan(&self.content);
+                        self.max_line_index = max_index;
+                        self.max_content_width = compute_width(max_line_width);
                     }
-                } else if new_width > current_max_line_width {
-                    self.max_content_width = new_width + line_number_width + 1;
-                    self.max_line_index = i;
+                } else if new_line_width > old_max_line_width {
+                    self.max_line_index = line_idx;
+                    self.max_content_width = compute_width(new_line_width);
                 }
             }
         }
@@ -588,6 +579,10 @@ impl EditArea {
         if let Ok(text) = crate::clipboard::get_content() {
             self.content.insert(cursor_pos, &text);
             self.set_cursor_from_char_offset(cursor_pos + text.chars().count());
+
+            let current_line = self.content.char_to_line(self.cursor.char_offset);
+            self.compute_max_content_width(Some(current_line));
+
             self.on_edit_callback().unwrap_or(Callback::dummy())
         } else {
             Callback::dummy()
@@ -615,6 +610,9 @@ impl EditArea {
         self.content.remove(start..end);
 
         self.set_cursor_from_char_offset(start);
+
+        let current_line = self.content.char_to_line(self.cursor.char_offset);
+        self.compute_max_content_width(Some(current_line));
 
         self.on_edit_callback().unwrap_or(Callback::dummy())
     }
@@ -652,6 +650,9 @@ impl EditArea {
                 current_offset.saturating_sub(tab_size)
             };
             self.set_cursor_from_char_offset(line_start + new_offset);
+
+            let current_line = self.content.char_to_line(self.cursor.char_offset);
+            self.compute_max_content_width(Some(current_line));
         }
 
         self.on_edit_callback().unwrap_or(Callback::dummy())
@@ -869,9 +870,7 @@ impl View for EditArea {
                 let row_start = self.content.line_to_byte(i);
                 let text = edit_area.content.line(i).to_string();
 
-                let mut highlighter =
-                    syntect::easy::HighlightLines::new(&edit_area.synref, &edit_area.theme);
-
+                let mut highlighter = HighlightLines::new(&edit_area.synref, &edit_area.theme);
                 let styled = cursive_syntect::parse(&text, &mut highlighter, &edit_area.syntax)
                     .unwrap_or_default();
 
