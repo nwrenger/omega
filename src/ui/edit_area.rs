@@ -190,6 +190,7 @@ impl EditArea {
     }
 
     /// Retrieves the content of the view.
+    #[allow(mismatched_lifetime_syntaxes)]
     pub fn get_content(&self) -> RopeSlice {
         self.content.slice(..)
     }
